@@ -1,0 +1,632 @@
+---
+title: 'User Management'
+description: 'CRUD operations and search endpoints for user management'
+---
+
+## Overview
+
+The User Management API (`sgivu-user`) provides comprehensive operations for managing users, including CRUD operations, multi-criteria search, status management, and user counts. All endpoints require JWT authentication with specific permissions.
+
+## Base URL
+
+```
+https://your-domain.com/v1/users
+```
+
+---
+
+## Create User
+
+```http
+POST /v1/users
+```
+
+Registers a new user in the system with domain validations.
+
+**Authentication:** Required
+
+**Authorization:** `user:create` permission
+
+### Request Body
+
+<ParamField body="username" type="string" required>
+  Unique username (no special characters)
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Password (must meet strength requirements)
+</ParamField>
+
+<ParamField body="person" type="object" required>
+  Person information object
+</ParamField>
+
+<ParamField body="person.firstName" type="string" required>
+  First name
+</ParamField>
+
+<ParamField body="person.lastName" type="string" required>
+  Last name
+</ParamField>
+
+<ParamField body="person.nationalId" type="string" required>
+  National identification number
+</ParamField>
+
+<ParamField body="person.email" type="string" required>
+  Email address
+</ParamField>
+
+<ParamField body="person.phone" type="string" required>
+  Phone number
+</ParamField>
+
+<ParamField body="roles" type="array" required>
+  Array of role IDs to assign
+</ParamField>
+
+<ParamField body="enabled" type="boolean" default="true">
+  Whether the user account is enabled
+</ParamField>
+
+```json
+{
+  "username": "jperez",
+  "password": "SecureP@ss123",
+  "person": {
+    "firstName": "Juan",
+    "lastName": "Pérez",
+    "nationalId": "1234567890",
+    "email": "jperez@example.com",
+    "phone": "3001234567"
+  },
+  "roles": [1],
+  "enabled": true
+}
+```
+
+### Response
+
+<ResponseField name="status" type="string">
+  Response status (success/error)
+</ResponseField>
+
+<ResponseField name="message" type="string">
+  Response message
+</ResponseField>
+
+<ResponseField name="data" type="object">
+  Created user object
+</ResponseField>
+
+```json
+{
+  "status": "success",
+  "message": "Usuario creado exitosamente",
+  "data": {
+    "id": 5,
+    "username": "jperez",
+    "person": {
+      "id": 5,
+      "firstName": "Juan",
+      "lastName": "Pérez",
+      "nationalId": "1234567890",
+      "email": "jperez@example.com",
+      "phone": "3001234567"
+    },
+    "roles": [
+      {
+        "id": 1,
+        "name": "USER",
+        "description": "Standard user role"
+      }
+    ],
+    "enabled": true,
+    "createdAt": "2026-03-06T10:30:00",
+    "updatedAt": "2026-03-06T10:30:00"
+  }
+}
+```
+
+### Status Codes
+
+- `201 Created` - User created successfully
+- `400 Bad Request` - Invalid input data
+- `401 Unauthorized` - Not authenticated
+- `403 Forbidden` - Missing `user:create` permission
+
+### Example
+
+```bash
+curl -X POST https://your-domain.com/v1/users \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "jperez",
+    "password": "SecureP@ss123",
+    "person": {
+      "firstName": "Juan",
+      "lastName": "Pérez",
+      "nationalId": "1234567890",
+      "email": "jperez@example.com",
+      "phone": "3001234567"
+    },
+    "roles": [1],
+    "enabled": true
+  }'
+```
+
+---
+
+## Get User by ID
+
+```http
+GET /v1/users/{id}
+```
+
+Retrieves the complete profile of a user.
+
+**Authentication:** Required
+
+**Authorization:** `user:read` permission
+
+### Path Parameters
+
+<ParamField path="id" type="integer" required>
+  User ID
+</ParamField>
+
+### Response
+
+```json
+{
+  "id": 1,
+  "username": "steven",
+  "person": {
+    "id": 1,
+    "firstName": "Steven",
+    "lastName": "Rodriguez",
+    "nationalId": "1234567890",
+    "email": "steven@example.com",
+    "phone": "3001234567"
+  },
+  "roles": [
+    {
+      "id": 1,
+      "name": "ADMIN",
+      "description": "Administrator role with full permissions"
+    }
+  ],
+  "enabled": true,
+  "createdAt": "2026-01-01T00:00:00",
+  "updatedAt": "2026-03-01T12:00:00"
+}
+```
+
+### Status Codes
+
+- `200 OK` - User found
+- `401 Unauthorized` - Not authenticated
+- `404 Not Found` - User does not exist
+
+### Example
+
+```bash
+curl -X GET https://your-domain.com/v1/users/1 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+## List Users (Paginated)
+
+```http
+GET /v1/users/page/{page}
+```
+
+Retrieves a paginated list of users (10 per page).
+
+**Authentication:** Required
+
+**Authorization:** `user:read` permission
+
+### Path Parameters
+
+<ParamField path="page" type="integer" required>
+  Page number (0-based)
+</ParamField>
+
+### Response
+
+```json
+{
+  "content": [
+    {
+      "id": 1,
+      "username": "steven",
+      "person": {
+        "firstName": "Steven",
+        "lastName": "Rodriguez",
+        "email": "steven@example.com"
+      },
+      "roles": ["ADMIN"],
+      "enabled": true
+    }
+  ],
+  "pageable": {
+    "pageNumber": 0,
+    "pageSize": 10
+  },
+  "totalElements": 25,
+  "totalPages": 3,
+  "last": false
+}
+```
+
+### Example
+
+```bash
+curl -X GET https://your-domain.com/v1/users/page/0 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+## Update User
+
+```http
+PUT /v1/users/{id}
+```
+
+Updates an existing user profile. Users can edit their own profile, or admins can modify any user with `user:update` permission.
+
+**Authentication:** Required
+
+**Authorization:** `user:update` permission OR own user ID
+
+### Path Parameters
+
+<ParamField path="id" type="integer" required>
+  User ID to update
+</ParamField>
+
+### Request Headers
+
+<ParamField header="X-User-ID" type="string" required>
+  Authenticated user ID (injected by Gateway)
+</ParamField>
+
+### Request Body
+
+<ParamField body="person" type="object">
+  Person information to update
+</ParamField>
+
+<ParamField body="roles" type="array">
+  Array of role IDs (admin only)
+</ParamField>
+
+<ParamField body="enabled" type="boolean">
+  Account enabled status (admin only)
+</ParamField>
+
+```json
+{
+  "person": {
+    "firstName": "Juan",
+    "lastName": "Pérez García",
+    "email": "juan.perez@example.com",
+    "phone": "3009876543"
+  }
+}
+```
+
+### Response
+
+```json
+{
+  "status": "success",
+  "message": "Usuario actualizado exitosamente",
+  "data": {
+    "id": 5,
+    "username": "jperez",
+    "person": {
+      "firstName": "Juan",
+      "lastName": "Pérez García",
+      "email": "juan.perez@example.com"
+    },
+    "updatedAt": "2026-03-06T11:45:00"
+  }
+}
+```
+
+### Status Codes
+
+- `200 OK` - User updated successfully
+- `400 Bad Request` - Invalid input
+- `401 Unauthorized` - Not authenticated
+- `403 Forbidden` - Missing permission or not own user
+- `404 Not Found` - User does not exist
+
+### Example
+
+```bash
+curl -X PUT https://your-domain.com/v1/users/5 \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "person": {
+      "email": "juan.perez@example.com"
+    }
+  }'
+```
+
+---
+
+## Delete User
+
+```http
+DELETE /v1/users/{id}
+```
+
+Permanently deletes a user from the system.
+
+**Authentication:** Required
+
+**Authorization:** `user:delete` permission
+
+### Path Parameters
+
+<ParamField path="id" type="integer" required>
+  User ID to delete
+</ParamField>
+
+### Status Codes
+
+- `204 No Content` - User deleted successfully
+- `401 Unauthorized` - Not authenticated
+- `403 Forbidden` - Missing `user:delete` permission
+- `404 Not Found` - User does not exist
+
+### Example
+
+```bash
+curl -X DELETE https://your-domain.com/v1/users/5 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+## Update User Status
+
+```http
+PATCH /v1/users/{id}/status
+```
+
+Enables or disables a user account to control access.
+
+**Authentication:** Required
+
+**Authorization:** `user:update` permission
+
+### Path Parameters
+
+<ParamField path="id" type="integer" required>
+  User ID
+</ParamField>
+
+### Request Body
+
+<ParamField body="enabled" type="boolean" required>
+  New status (true=enabled, false=disabled)
+</ParamField>
+
+```json
+true
+```
+
+### Response
+
+```json
+{
+  "enabled": true
+}
+```
+
+### Example
+
+```bash
+curl -X PATCH https://your-domain.com/v1/users/5/status \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d 'false'
+```
+
+---
+
+## Get User Counts
+
+```http
+GET /v1/users/count
+```
+
+Retrieves statistics: total users, active, and inactive.
+
+**Authentication:** Required
+
+**Authorization:** `user:read` permission
+
+### Response
+
+```json
+{
+  "total": 25,
+  "active": 22,
+  "inactive": 3
+}
+```
+
+### Example
+
+```bash
+curl -X GET https://your-domain.com/v1/users/count \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+## Search Users
+
+```http
+GET /v1/users/search
+```
+
+Multi-criteria search with optional filters (AND logic).
+
+**Authentication:** Required
+
+**Authorization:** `user:read` permission
+
+### Query Parameters
+
+<ParamField query="name" type="string">
+  Filter by first or last name (partial match)
+</ParamField>
+
+<ParamField query="username" type="string">
+  Filter by username (partial match)
+</ParamField>
+
+<ParamField query="email" type="string">
+  Filter by email
+</ParamField>
+
+<ParamField query="role" type="string">
+  Filter by role name
+</ParamField>
+
+<ParamField query="enabled" type="boolean">
+  Filter by enabled status
+</ParamField>
+
+### Response
+
+```json
+[
+  {
+    "id": 1,
+    "username": "steven",
+    "person": {
+      "firstName": "Steven",
+      "lastName": "Rodriguez"
+    },
+    "roles": ["ADMIN"],
+    "enabled": true
+  }
+]
+```
+
+### Example
+
+```bash
+curl -X GET "https://your-domain.com/v1/users/search?role=ADMIN&enabled=true" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+## Search Users (Paginated)
+
+```http
+GET /v1/users/search/page/{page}
+```
+
+Paginated variant of multi-criteria search.
+
+**Authentication:** Required
+
+**Authorization:** `user:read` permission
+
+### Path Parameters
+
+<ParamField path="page" type="integer" required>
+  Page number (0-based)
+</ParamField>
+
+### Query Parameters
+
+<ParamField query="size" type="integer" default="10">
+  Page size
+</ParamField>
+
+<ParamField query="name" type="string">
+  Filter by name
+</ParamField>
+
+<ParamField query="username" type="string">
+  Filter by username
+</ParamField>
+
+<ParamField query="email" type="string">
+  Filter by email
+</ParamField>
+
+<ParamField query="role" type="string">
+  Filter by role
+</ParamField>
+
+<ParamField query="enabled" type="boolean">
+  Filter by status
+</ParamField>
+
+### Response
+
+```json
+{
+  "content": [...],
+  "pageable": {
+    "pageNumber": 0,
+    "pageSize": 10
+  },
+  "totalElements": 5,
+  "totalPages": 1
+}
+```
+
+### Example
+
+```bash
+curl -X GET "https://your-domain.com/v1/users/search/page/0?size=20&role=USER" \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+## Internal Endpoints
+
+### Get User by Username
+
+```http
+GET /v1/users/username/{username}
+```
+
+<Warning>
+  This endpoint is for internal service-to-service communication only. It requires the `X-Internal-Service-Key` header and should never be exposed publicly.
+</Warning>
+
+Used by the Authorization Server to retrieve user profile (roles/permissions) when issuing JWT tokens.
+
+**Authentication:** `X-Internal-Service-Key` header
+
+### Path Parameters
+
+<ParamField path="username" type="string" required>
+  Username to look up
+</ParamField>
+
+### Example
+
+```bash
+curl -X GET https://your-domain.com/v1/users/username/steven \
+  -H "X-Internal-Service-Key: YOUR_INTERNAL_KEY"
+```

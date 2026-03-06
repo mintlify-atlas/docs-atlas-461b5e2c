@@ -1,0 +1,466 @@
+---
+title: 'Vehicle Images'
+description: 'Upload and manage vehicle images using S3 presigned URLs'
+---
+
+## Overview
+
+The Vehicle Images API provides endpoints for uploading, confirming, listing, and deleting vehicle images. Images are stored in AWS S3, and the upload process uses presigned URLs for direct client-to-S3 uploads.
+
+## Base URL
+
+```
+https://your-domain.com/v1/vehicles/{vehicleId}/images
+```
+
+---
+
+## Upload Flow
+
+The image upload process follows a two-step flow:
+
+1. **Request presigned URL** - Get a temporary upload URL from the API
+2. **Upload to S3** - Upload the image directly to S3 using the presigned URL
+3. **Confirm upload** - Notify the API that the upload is complete and register metadata
+
+---
+
+## Generate Presigned Upload URL
+
+```http
+POST /v1/vehicles/{vehicleId}/images/presigned-upload
+```
+
+Generates a presigned URL for uploading an image directly to S3.
+
+**Authentication:** Required
+
+**Authorization:** `vehicle:update` permission
+
+### Path Parameters
+
+<ParamField path="vehicleId" type="integer" required>
+  Vehicle ID to attach the image to
+</ParamField>
+
+### Request Body
+
+<ParamField body="contentType" type="string" required>
+  MIME type of the image. Allowed values:
+  - `image/jpeg`
+  - `image/png`
+  - `image/webp`
+</ParamField>
+
+```json
+{
+  "contentType": "image/jpeg"
+}
+```
+
+### Response
+
+<ResponseField name="url" type="string">
+  Presigned S3 URL for uploading the image
+</ResponseField>
+
+<ResponseField name="key" type="string">
+  S3 object key (needed for confirmation)
+</ResponseField>
+
+<ResponseField name="expiresIn" type="integer">
+  URL expiration time in seconds
+</ResponseField>
+
+<ResponseField name="contentType" type="string">
+  The content type that must be used for the upload
+</ResponseField>
+
+```json
+{
+  "url": "https://sgivu-bucket.s3.amazonaws.com/images/vehicle-15-1709740800.jpg?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=...",
+  "key": "images/vehicle-15-1709740800.jpg",
+  "expiresIn": 900,
+  "contentType": "image/jpeg"
+}
+```
+
+### Status Codes
+
+- `200 OK` - Presigned URL generated successfully
+- `400 Bad Request` - Invalid content type
+- `401 Unauthorized` - Not authenticated
+- `403 Forbidden` - Missing `vehicle:update` permission
+- `404 Not Found` - Vehicle does not exist
+
+### Example
+
+```bash
+curl -X POST https://your-domain.com/v1/vehicles/15/images/presigned-upload \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "contentType": "image/jpeg"
+  }'
+```
+
+---
+
+## Upload to S3
+
+Once you have the presigned URL, upload the image directly to S3:
+
+```bash
+curl -X PUT "PRESIGNED_URL" \
+  -H "Content-Type: image/jpeg" \
+  --data-binary @car-photo.jpg
+```
+
+<Note>
+  The Content-Type header **must** match the content type specified when generating the presigned URL.
+</Note>
+
+---
+
+## Confirm Upload
+
+```http
+POST /v1/vehicles/{vehicleId}/images/confirm-upload
+```
+
+Confirms that an image was successfully uploaded to S3 and registers its metadata in the database.
+
+**Authentication:** Required
+
+**Authorization:** `vehicle:update` permission
+
+### Path Parameters
+
+<ParamField path="vehicleId" type="integer" required>
+  Vehicle ID
+</ParamField>
+
+### Request Body
+
+<ParamField body="fileName" type="string" required>
+  Original filename
+</ParamField>
+
+<ParamField body="contentType" type="string" required>
+  MIME type of the uploaded image
+</ParamField>
+
+<ParamField body="size" type="integer" required>
+  File size in bytes
+</ParamField>
+
+<ParamField body="key" type="string" required>
+  S3 object key (received from presigned URL generation)
+</ParamField>
+
+<ParamField body="primary" type="boolean" default="false">
+  Whether this is the primary vehicle image
+</ParamField>
+
+```json
+{
+  "fileName": "front-view.jpg",
+  "contentType": "image/jpeg",
+  "size": 245760,
+  "key": "images/vehicle-15-1709740800.jpg",
+  "primary": true
+}
+```
+
+### Response
+
+<ResponseField name="id" type="integer">
+  Image record ID
+</ResponseField>
+
+<ResponseField name="vehicleId" type="integer">
+  Vehicle ID
+</ResponseField>
+
+<ResponseField name="fileName" type="string">
+  Original filename
+</ResponseField>
+
+<ResponseField name="key" type="string">
+  S3 object key
+</ResponseField>
+
+<ResponseField name="url" type="string">
+  Public URL or presigned download URL
+</ResponseField>
+
+<ResponseField name="contentType" type="string">
+  MIME type
+</ResponseField>
+
+<ResponseField name="size" type="integer">
+  File size in bytes
+</ResponseField>
+
+<ResponseField name="isPrimary" type="boolean">
+  Whether this is the primary image
+</ResponseField>
+
+<ResponseField name="createdAt" type="string">
+  Upload timestamp
+</ResponseField>
+
+```json
+{
+  "id": 42,
+  "vehicleId": 15,
+  "fileName": "front-view.jpg",
+  "key": "images/vehicle-15-1709740800.jpg",
+  "url": "https://sgivu-bucket.s3.amazonaws.com/images/vehicle-15-1709740800.jpg",
+  "contentType": "image/jpeg",
+  "size": 245760,
+  "isPrimary": true,
+  "createdAt": "2026-03-06T10:35:00"
+}
+```
+
+### Status Codes
+
+- `200 OK` - Upload confirmed and metadata registered
+- `400 Bad Request` - Invalid data or S3 key not found
+- `401 Unauthorized` - Not authenticated
+- `403 Forbidden` - Missing `vehicle:update` permission
+- `404 Not Found` - Vehicle does not exist
+
+### Example
+
+```bash
+curl -X POST https://your-domain.com/v1/vehicles/15/images/confirm-upload \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "fileName": "front-view.jpg",
+    "contentType": "image/jpeg",
+    "size": 245760,
+    "key": "images/vehicle-15-1709740800.jpg",
+    "primary": true
+  }'
+```
+
+---
+
+## List Vehicle Images
+
+```http
+GET /v1/vehicles/{vehicleId}/images
+```
+
+Retrieves all images associated with a vehicle.
+
+**Authentication:** Required
+
+**Authorization:** `vehicle:read` permission
+
+### Path Parameters
+
+<ParamField path="vehicleId" type="integer" required>
+  Vehicle ID
+</ParamField>
+
+### Response
+
+```json
+[
+  {
+    "id": 42,
+    "vehicleId": 15,
+    "fileName": "front-view.jpg",
+    "url": "https://sgivu-bucket.s3.amazonaws.com/images/vehicle-15-1709740800.jpg",
+    "contentType": "image/jpeg",
+    "size": 245760,
+    "isPrimary": true,
+    "createdAt": "2026-03-06T10:35:00"
+  },
+  {
+    "id": 43,
+    "vehicleId": 15,
+    "fileName": "side-view.jpg",
+    "url": "https://sgivu-bucket.s3.amazonaws.com/images/vehicle-15-1709740850.jpg",
+    "contentType": "image/jpeg",
+    "size": 198432,
+    "isPrimary": false,
+    "createdAt": "2026-03-06T10:36:00"
+  }
+]
+```
+
+### Status Codes
+
+- `200 OK` - Images retrieved successfully
+- `401 Unauthorized` - Not authenticated
+- `404 Not Found` - Vehicle does not exist
+
+### Example
+
+```bash
+curl -X GET https://your-domain.com/v1/vehicles/15/images \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+## Delete Image
+
+```http
+DELETE /v1/vehicles/{vehicleId}/images/{imageId}
+```
+
+Deletes a vehicle image from both the database and S3.
+
+**Authentication:** Required
+
+**Authorization:** `vehicle:delete` permission
+
+### Path Parameters
+
+<ParamField path="vehicleId" type="integer" required>
+  Vehicle ID
+</ParamField>
+
+<ParamField path="imageId" type="integer" required>
+  Image ID to delete
+</ParamField>
+
+### Status Codes
+
+- `204 No Content` - Image deleted successfully
+- `401 Unauthorized` - Not authenticated
+- `403 Forbidden` - Missing `vehicle:delete` permission
+- `404 Not Found` - Vehicle or image does not exist
+
+### Example
+
+```bash
+curl -X DELETE https://your-domain.com/v1/vehicles/15/images/42 \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+## Primary Image Behavior
+
+### Automatic Primary Assignment
+
+- The **first image** uploaded for a vehicle is automatically marked as primary (`isPrimary=true`)
+- Only one image per vehicle can be primary at a time
+- Setting a new image as primary will automatically unset the previous primary image
+
+### Primary Image Deletion
+
+- When the primary image is deleted, the **oldest remaining image** is automatically promoted to primary
+- If no images remain after deletion, the vehicle has no primary image
+
+---
+
+## Allowed Content Types
+
+Only the following image formats are accepted:
+
+- `image/jpeg` - JPEG/JPG images
+- `image/png` - PNG images
+- `image/webp` - WebP images
+
+<Warning>
+  Attempting to upload other file types will result in a `400 Bad Request` error.
+</Warning>
+
+---
+
+## S3 Configuration
+
+### CORS Requirements
+
+The S3 bucket must be configured with appropriate CORS rules to allow browser-based uploads:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://your-domain.com"],
+    "AllowedMethods": ["GET", "PUT"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+CORS origins are configured via the `aws.s3.allowed-origins` property in `sgivu-config`.
+
+### Presigned URL Expiration
+
+Presigned URLs expire after **15 minutes** (900 seconds). Uploads must be completed within this timeframe.
+
+---
+
+## Complete Upload Example
+
+Here's a complete example of uploading an image:
+
+```bash
+# Step 1: Get presigned URL
+RESPONSE=$(curl -X POST https://your-domain.com/v1/vehicles/15/images/presigned-upload \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"contentType": "image/jpeg"}')
+
+URL=$(echo $RESPONSE | jq -r '.url')
+KEY=$(echo $RESPONSE | jq -r '.key')
+
+# Step 2: Upload to S3
+curl -X PUT "$URL" \
+  -H "Content-Type: image/jpeg" \
+  --data-binary @car-photo.jpg
+
+# Step 3: Confirm upload
+curl -X POST https://your-domain.com/v1/vehicles/15/images/confirm-upload \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"fileName\": \"car-photo.jpg\",
+    \"contentType\": \"image/jpeg\",
+    \"size\": 245760,
+    \"key\": \"$KEY\",
+    \"primary\": true
+  }"
+```
+
+---
+
+## Error Responses
+
+### 400 Bad Request - Invalid Content Type
+
+```json
+{
+  "error": "invalid_content_type",
+  "message": "Content type must be image/jpeg, image/png, or image/webp"
+}
+```
+
+### 400 Bad Request - S3 Key Not Found
+
+```json
+{
+  "error": "validation_error",
+  "message": "The specified S3 key does not exist or upload was not completed"
+}
+```
+
+### 404 Not Found
+
+```json
+{
+  "error": "not_found",
+  "message": "Vehicle with ID 999 not found"
+}
+```

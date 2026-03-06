@@ -1,0 +1,462 @@
+---
+title: 'Model Metadata'
+description: 'Query information about trained models'
+---
+
+## Overview
+
+The Model Metadata API provides endpoints to retrieve information about trained demand prediction models, including version, performance metrics, training timestamp, and dataset statistics.
+
+## Base URL
+
+```
+https://your-domain.com/v1/ml
+```
+
+---
+
+## Get Latest Model
+
+```http
+GET /v1/ml/models/latest
+```
+
+Retrieves metadata for the currently active prediction model.
+
+**Authentication:** Required (JWT or internal service key)
+
+**Authorization:** Configurable permissions (default: requires valid token)
+
+### Response
+
+<ResponseField name="version" type="string">
+  Model version identifier
+</ResponseField>
+
+<ResponseField name="trained_at" type="string">
+  Training completion timestamp (ISO 8601)
+</ResponseField>
+
+<ResponseField name="metrics" type="object">
+  Model performance metrics
+</ResponseField>
+
+<ResponseField name="metrics.mae" type="number">
+  Mean Absolute Error
+</ResponseField>
+
+<ResponseField name="metrics.rmse" type="number">
+  Root Mean Square Error
+</ResponseField>
+
+<ResponseField name="metrics.mape" type="number">
+  Mean Absolute Percentage Error
+</ResponseField>
+
+<ResponseField name="metrics.r2" type="number">
+  R-squared coefficient
+</ResponseField>
+
+<ResponseField name="train_samples" type="integer">
+  Number of training samples
+</ResponseField>
+
+<ResponseField name="test_samples" type="integer">
+  Number of test samples
+</ResponseField>
+
+<ResponseField name="total_samples" type="integer">
+  Total number of samples in dataset
+</ResponseField>
+
+<ResponseField name="algorithm" type="string">
+  Machine learning algorithm used (e.g., "Prophet", "ARIMA", "XGBoost")
+</ResponseField>
+
+<ResponseField name="features" type="array">
+  List of feature names used in the model
+</ResponseField>
+
+<ResponseField name="segments_covered" type="integer">
+  Number of vehicle segments with sufficient data for predictions
+</ResponseField>
+
+```json
+{
+  "version": "v1.3.0-20260306",
+  "trained_at": "2026-03-06T14:35:22Z",
+  "metrics": {
+    "mae": 1.32,
+    "rmse": 1.95,
+    "mape": 0.14,
+    "r2": 0.87
+  },
+  "train_samples": 8540,
+  "test_samples": 2135,
+  "total_samples": 10675,
+  "algorithm": "Prophet",
+  "features": [
+    "vehicle_type",
+    "brand",
+    "model",
+    "line",
+    "month",
+    "year",
+    "seasonality",
+    "trend",
+    "lag_1",
+    "lag_3",
+    "rolling_mean_3"
+  ],
+  "segments_covered": 245
+}
+```
+
+### Status Codes
+
+- `200 OK` - Model metadata retrieved successfully
+- `401 Unauthorized` - Missing or invalid authentication
+- `403 Forbidden` - Insufficient permissions
+- `404 Not Found` - No trained model available
+
+### Example
+
+```bash
+curl -X GET https://your-domain.com/v1/ml/models/latest \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+## No Model Available Response
+
+If no model has been trained yet, the API returns:
+
+```json
+{
+  "detail": "No hay modelos disponibles"
+}
+```
+
+**Status Code:** 200 OK (with informational message)
+
+---
+
+## Model Metadata Fields
+
+### Version
+
+Unique identifier for the model following semantic versioning with timestamp:
+
+- **Format:** `v{major}.{minor}.{patch}-{YYYYMMDD}`
+- **Example:** `v1.3.0-20260306`
+- **Purpose:** Track model lineage and enable rollback
+
+### Trained At
+
+ISO 8601 timestamp indicating when training completed:
+
+- **Format:** `YYYY-MM-DDTHH:MM:SSZ`
+- **Timezone:** UTC
+- **Example:** `2026-03-06T14:35:22Z`
+
+### Metrics
+
+Performance metrics calculated on the test set:
+
+#### Mean Absolute Error (MAE)
+- **Description:** Average absolute prediction error
+- **Units:** Number of vehicles
+- **Interpretation:** Lower is better
+- **Good value:** < 2.0
+
+#### Root Mean Square Error (RMSE)
+- **Description:** Standard deviation of prediction errors
+- **Units:** Number of vehicles
+- **Interpretation:** Lower is better, penalizes large errors
+- **Good value:** < 3.0
+
+#### Mean Absolute Percentage Error (MAPE)
+- **Description:** Average percentage error
+- **Units:** Decimal (0-1)
+- **Interpretation:** Lower is better
+- **Good value:** < 0.20 (20%)
+
+#### R-squared (R²)
+- **Description:** Proportion of variance explained
+- **Range:** 0-1 (can be negative)
+- **Interpretation:** Higher is better
+- **Good value:** > 0.75
+
+### Dataset Statistics
+
+#### Train Samples
+Number of data points used for training the model.
+
+#### Test Samples
+Number of data points held out for validation.
+
+#### Total Samples
+Sum of training and test samples.
+
+**Typical split:** 80% train, 20% test
+
+### Algorithm
+
+The machine learning or statistical algorithm used:
+
+- **Prophet** - Facebook's time series forecasting library
+- **ARIMA** - Auto-Regressive Integrated Moving Average
+- **XGBoost** - Gradient boosting for regression
+- **LSTM** - Long Short-Term Memory neural network
+
+### Features
+
+List of input variables used by the model:
+
+**Common features:**
+- `vehicle_type` - CAR or MOTORCYCLE
+- `brand` - Manufacturer
+- `model` - Model year
+- `line` - Vehicle line/variant
+- `month` - Month of year (seasonality)
+- `year` - Year (trend)
+- `lag_1`, `lag_3` - Previous months' sales
+- `rolling_mean_3` - 3-month moving average
+
+### Segments Covered
+
+Number of unique vehicle segments (brand/model/line combinations) with sufficient historical data for predictions.
+
+- **Higher is better** - More coverage means predictions available for more vehicles
+- **Typical range:** 100-500 segments
+
+---
+
+## Use Cases
+
+### Model Monitoring Dashboard
+
+Display current model status:
+
+```javascript
+fetch('https://your-domain.com/v1/ml/models/latest', {
+  headers: { 'Authorization': `Bearer ${token}` }
+})
+  .then(res => res.json())
+  .then(model => {
+    console.log(`Current model: ${model.version}`);
+    console.log(`Accuracy (MAE): ${model.metrics.mae}`);
+    console.log(`Trained: ${new Date(model.trained_at).toLocaleString()}`);
+  });
+```
+
+### Model Comparison
+
+Compare metrics before and after retraining to assess improvement:
+
+```python
+import requests
+
+# Get current model
+current = requests.get(
+    "https://your-domain.com/v1/ml/models/latest",
+    headers={"Authorization": f"Bearer {token}"}
+).json()
+
+print(f"Current MAE: {current['metrics']['mae']}")
+print(f"Current R²: {current['metrics']['r2']}")
+
+# Retrain
+retrain_response = requests.post(
+    "https://your-domain.com/v1/ml/retrain",
+    headers={"Authorization": f"Bearer {token}"},
+    json={}
+)
+
+new_model = retrain_response.json()
+print(f"New MAE: {new_model['metrics']['mae']}")
+print(f"New R²: {new_model['metrics']['r2']}")
+
+# Compare
+mae_improvement = current['metrics']['mae'] - new_model['metrics']['mae']
+print(f"MAE improvement: {mae_improvement:.2f}")
+```
+
+### Health Check
+
+Verify that a model is available before making predictions:
+
+```python
+def is_model_available():
+    response = requests.get(
+        "https://your-domain.com/v1/ml/models/latest",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    
+    if response.status_code != 200:
+        return False
+    
+    data = response.json()
+    return "version" in data
+
+if is_model_available():
+    # Make predictions
+    predict(...)
+else:
+    print("No model available. Please train a model first.")
+```
+
+---
+
+## Model Staleness Detection
+
+Check if the model needs retraining:
+
+```python
+from datetime import datetime, timedelta
+
+def is_model_stale(max_age_days=30):
+    response = requests.get(
+        "https://your-domain.com/v1/ml/models/latest",
+        headers={"Authorization": f"Bearer {token}"}
+    ).json()
+    
+    if "detail" in response:  # No model
+        return True
+    
+    trained_at = datetime.fromisoformat(
+        response["trained_at"].replace("Z", "+00:00")
+    )
+    age = datetime.now(trained_at.tzinfo) - trained_at
+    
+    return age.days > max_age_days
+
+if is_model_stale():
+    print("Model is stale. Triggering retraining...")
+    requests.post(
+        "https://your-domain.com/v1/ml/retrain",
+        headers={"Authorization": f"Bearer {token}"},
+        json={}
+    )
+```
+
+---
+
+## Model Quality Assessment
+
+```python
+def assess_model_quality(metrics):
+    mae = metrics['mae']
+    rmse = metrics['rmse']
+    mape = metrics['mape']
+    r2 = metrics['r2']
+    
+    if mae < 1.0 and mape < 0.10 and r2 > 0.90:
+        return "Excellent"
+    elif mae < 2.0 and mape < 0.20 and r2 > 0.75:
+        return "Good"
+    elif mae < 3.0 and mape < 0.30 and r2 > 0.60:
+        return "Fair"
+    else:
+        return "Poor"
+
+model = requests.get(
+    "https://your-domain.com/v1/ml/models/latest",
+    headers={"Authorization": f"Bearer {token}"}
+).json()
+
+quality = assess_model_quality(model['metrics'])
+print(f"Model quality: {quality}")
+
+if quality == "Poor":
+    print("Consider investigating data quality or algorithm choice")
+```
+
+---
+
+## API Documentation Link
+
+For interactive API documentation, visit:
+
+```
+https://your-domain.com/docs
+```
+
+The ML service uses FastAPI and provides automatic OpenAPI documentation.
+
+---
+
+## Error Responses
+
+### 401 Unauthorized
+
+```json
+{
+  "detail": "Not authenticated"
+}
+```
+
+### 403 Forbidden
+
+```json
+{
+  "detail": "User does not have required permission: ml:models"
+}
+```
+
+### 404 Not Found (No Model)
+
+```json
+{
+  "detail": "No hay modelos disponibles"
+}
+```
+
+---
+
+## Health Check Endpoint
+
+The ML service also provides a health check endpoint:
+
+```http
+GET /actuator/health
+```
+
+**Alternative:** `/health`
+
+**Authentication:** None (public endpoint)
+
+### Response
+
+```json
+{
+  "status": "healthy",
+  "service": "sgivu-ml",
+  "version": "1.0.0",
+  "model_available": true
+}
+```
+
+### Example
+
+```bash
+curl -X GET https://your-domain.com/health
+```
+
+---
+
+## Integration with Gateway
+
+In production, ML endpoints are typically accessed through the API gateway:
+
+```
+Gateway: https://your-domain.com/v1/ml/**
+  → Routes to: http://sgivu-ml:8000/v1/ml/**
+```
+
+The gateway handles:
+- JWT token validation
+- Request routing
+- Rate limiting
+- Logging and monitoring

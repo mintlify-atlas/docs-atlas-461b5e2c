@@ -1,0 +1,518 @@
+---
+title: 'Roles & Permissions'
+description: 'Manage roles and permissions for authorization'
+---
+
+## Overview
+
+The Roles & Permissions API provides endpoints for managing role-based access control (RBAC). Permissions are granular authorities (e.g., `user:read`, `vehicle:create`) that are assigned to roles, which are then assigned to users.
+
+## Base URL
+
+```
+https://your-domain.com/v1
+```
+
+---
+
+## Roles
+
+### List All Roles
+
+```http
+GET /v1/roles
+```
+
+Retrieves all roles defined in the system.
+
+**Authentication:** Required
+
+**Authorization:** `user:read` permission
+
+#### Response
+
+```json
+[
+  {
+    "id": 1,
+    "name": "ADMIN",
+    "description": "Administrator role with full permissions",
+    "permissions": [
+      {
+        "id": 1,
+        "name": "user:read",
+        "description": "Read user information"
+      },
+      {
+        "id": 2,
+        "name": "user:create",
+        "description": "Create new users"
+      }
+    ]
+  },
+  {
+    "id": 2,
+    "name": "USER",
+    "description": "Standard user role",
+    "permissions": [
+      {
+        "id": 1,
+        "name": "user:read",
+        "description": "Read user information"
+      }
+    ]
+  }
+]
+```
+
+#### Status Codes
+
+- `200 OK` - Roles retrieved successfully
+- `401 Unauthorized` - Not authenticated
+
+#### Example
+
+```bash
+curl -X GET https://your-domain.com/v1/roles \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+### Add Permissions to Role
+
+```http
+POST /v1/roles/{id}/add-permissions
+```
+
+Adds permissions to a role without overwriting existing ones.
+
+**Authentication:** Required
+
+**Authorization:** `user:create` or `user:update` permission
+
+#### Path Parameters
+
+<ParamField path="id" type="integer" required>
+  Role ID
+</ParamField>
+
+#### Request Body
+
+<ParamField body="permissions" type="array" required>
+  Array of permission names to add
+</ParamField>
+
+```json
+[
+  "vehicle:read",
+  "vehicle:create"
+]
+```
+
+#### Response
+
+```json
+{
+  "id": 2,
+  "name": "USER",
+  "description": "Standard user role",
+  "permissions": [
+    {
+      "id": 1,
+      "name": "user:read",
+      "description": "Read user information"
+    },
+    {
+      "id": 5,
+      "name": "vehicle:read",
+      "description": "Read vehicle information"
+    },
+    {
+      "id": 6,
+      "name": "vehicle:create",
+      "description": "Create new vehicles"
+    }
+  ]
+}
+```
+
+#### Status Codes
+
+- `200 OK` - Permissions added successfully
+- `401 Unauthorized` - Not authenticated
+- `403 Forbidden` - Missing required permission
+- `404 Not Found` - Role not found
+
+#### Example
+
+```bash
+curl -X POST https://your-domain.com/v1/roles/2/add-permissions \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '["vehicle:read", "vehicle:create"]'
+```
+
+---
+
+### Replace Role Permissions
+
+```http
+PUT /v1/roles/{id}/permissions
+```
+
+Replaces all permissions of a role (destructive operation).
+
+**Authentication:** Required
+
+**Authorization:** `user:update` permission
+
+<Warning>
+  This operation completely replaces the role's permissions. Use with caution.
+</Warning>
+
+#### Path Parameters
+
+<ParamField path="id" type="integer" required>
+  Role ID
+</ParamField>
+
+#### Request Body
+
+<ParamField body="permissions" type="array" required>
+  Complete array of permission names for the role
+</ParamField>
+
+```json
+[
+  "user:read",
+  "vehicle:read"
+]
+```
+
+#### Response
+
+```json
+{
+  "id": 2,
+  "name": "USER",
+  "description": "Standard user role",
+  "permissions": [
+    {
+      "id": 1,
+      "name": "user:read",
+      "description": "Read user information"
+    },
+    {
+      "id": 5,
+      "name": "vehicle:read",
+      "description": "Read vehicle information"
+    }
+  ]
+}
+```
+
+#### Status Codes
+
+- `200 OK` - Permissions updated successfully
+- `401 Unauthorized` - Not authenticated
+- `403 Forbidden` - Missing `user:update` permission
+- `404 Not Found` - Role not found
+
+#### Example
+
+```bash
+curl -X PUT https://your-domain.com/v1/roles/2/permissions \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '["user:read", "vehicle:read"]'
+```
+
+---
+
+### Remove Permissions from Role
+
+```http
+DELETE /v1/roles/{id}/remove-permissions
+```
+
+Removes specific permissions from a role.
+
+**Authentication:** Required
+
+**Authorization:** `user:delete` permission
+
+#### Path Parameters
+
+<ParamField path="id" type="integer" required>
+  Role ID
+</ParamField>
+
+#### Request Body
+
+<ParamField body="permissions" type="array" required>
+  Array of permission names to remove
+</ParamField>
+
+```json
+[
+  "vehicle:delete"
+]
+```
+
+#### Response
+
+```json
+{
+  "id": 2,
+  "name": "USER",
+  "description": "Standard user role",
+  "permissions": [
+    {
+      "id": 1,
+      "name": "user:read",
+      "description": "Read user information"
+    },
+    {
+      "id": 5,
+      "name": "vehicle:read",
+      "description": "Read vehicle information"
+    }
+  ]
+}
+```
+
+#### Status Codes
+
+- `200 OK` - Permissions removed successfully
+- `401 Unauthorized` - Not authenticated
+- `403 Forbidden` - Missing `user:delete` permission
+- `404 Not Found` - Role not found
+
+#### Example
+
+```bash
+curl -X DELETE https://your-domain.com/v1/roles/2/remove-permissions \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '["vehicle:delete"]'
+```
+
+---
+
+## Permissions
+
+### List All Permissions
+
+```http
+GET /v1/permissions
+```
+
+Retrieves the complete catalog of granular permissions available in the system.
+
+**Authentication:** Required
+
+**Authorization:** `user:read` permission
+
+#### Response
+
+```json
+[
+  {
+    "id": 1,
+    "name": "user:read",
+    "description": "Read user information"
+  },
+  {
+    "id": 2,
+    "name": "user:create",
+    "description": "Create new users"
+  },
+  {
+    "id": 3,
+    "name": "user:update",
+    "description": "Update user information"
+  },
+  {
+    "id": 4,
+    "name": "user:delete",
+    "description": "Delete users"
+  },
+  {
+    "id": 5,
+    "name": "vehicle:read",
+    "description": "Read vehicle information"
+  },
+  {
+    "id": 6,
+    "name": "vehicle:create",
+    "description": "Create new vehicles"
+  },
+  {
+    "id": 7,
+    "name": "vehicle:update",
+    "description": "Update vehicle information"
+  },
+  {
+    "id": 8,
+    "name": "vehicle:delete",
+    "description": "Delete vehicles"
+  },
+  {
+    "id": 9,
+    "name": "client:read",
+    "description": "Read client information"
+  },
+  {
+    "id": 10,
+    "name": "client:create",
+    "description": "Create new clients"
+  },
+  {
+    "id": 11,
+    "name": "client:update",
+    "description": "Update client information"
+  },
+  {
+    "id": 12,
+    "name": "client:delete",
+    "description": "Delete clients"
+  },
+  {
+    "id": 13,
+    "name": "contract:read",
+    "description": "Read contract information"
+  },
+  {
+    "id": 14,
+    "name": "contract:create",
+    "description": "Create new contracts"
+  },
+  {
+    "id": 15,
+    "name": "contract:update",
+    "description": "Update contract information"
+  },
+  {
+    "id": 16,
+    "name": "contract:delete",
+    "description": "Delete contracts"
+  }
+]
+```
+
+#### Status Codes
+
+- `200 OK` - Permissions retrieved successfully
+- `401 Unauthorized` - Not authenticated
+
+#### Example
+
+```bash
+curl -X GET https://your-domain.com/v1/permissions \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+## Permission Naming Convention
+
+Permissions follow a consistent naming pattern: `resource:action`
+
+### Resource Types
+
+- `user` - User management
+- `vehicle` - Vehicle management
+- `client` - Client management (persons and companies)
+- `contract` - Purchase/sale contract management
+- `person` - Individual person client operations
+- `company` - Company client operations
+
+### Action Types
+
+- `read` - View/retrieve resource information
+- `create` - Create new resources
+- `update` - Modify existing resources
+- `delete` - Remove resources
+
+### Examples
+
+- `user:read` - Permission to view user information
+- `vehicle:create` - Permission to add new vehicles
+- `contract:update` - Permission to modify contracts
+- `client:delete` - Permission to delete clients
+
+---
+
+## Default Roles
+
+SGIVU includes the following default roles:
+
+### ADMIN
+
+Complete access to all system resources:
+
+- All `user:*` permissions
+- All `vehicle:*` permissions
+- All `client:*` permissions
+- All `contract:*` permissions
+
+### USER
+
+Standard user with read-only access:
+
+- `user:read`
+- `vehicle:read`
+- `client:read`
+- `contract:read`
+
+### SALES
+
+Sales personnel permissions:
+
+- `client:*` (all client operations)
+- `contract:*` (all contract operations)
+- `vehicle:read`
+- `user:read`
+
+### INVENTORY
+
+Inventory management permissions:
+
+- `vehicle:*` (all vehicle operations)
+- `client:read`
+- `user:read`
+
+---
+
+## Authorization Headers
+
+All endpoints require a valid JWT Bearer token:
+
+```
+Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+The token must include the `rolesAndPermissions` claim containing the required permissions for the endpoint.
+
+---
+
+## Error Responses
+
+### 403 Forbidden
+
+```json
+{
+  "error": "forbidden",
+  "message": "User does not have required permission: user:update"
+}
+```
+
+### 404 Not Found
+
+```json
+{
+  "error": "not_found",
+  "message": "Role with ID 999 not found"
+}
+```

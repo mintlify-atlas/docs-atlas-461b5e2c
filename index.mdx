@@ -1,97 +1,96 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "SGIVU - Vehicle Inventory Management System"
+description: "Complete vehicle inventory management platform with demand prediction for used car dealerships"
 ---
 
-## Setting up
+<Note>
+  SGIVU is a comprehensive vehicle inventory management system designed for used car dealerships, featuring OAuth 2.1 authentication, microservices architecture, and ML-powered demand prediction.
+</Note>
 
-Get your documentation site up and running in minutes.
+## Key Features
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Authentication & Authorization" icon="shield-check" href="/features/authentication">
+    OAuth 2.1/OIDC with JWT tokens and role-based access control
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="Vehicle Management" icon="car" href="/features/vehicle-management">
+    Complete vehicle catalog with S3 image storage and advanced search
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Demand Prediction" icon="chart-line" href="/features/demand-prediction">
+    ML-powered demand forecasting with FastAPI and scikit-learn
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Microservices Architecture" icon="cubes" href="/architecture">
+    Scalable Spring Cloud microservices with service discovery
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Quick Links
 
-Everything you need to create world-class documentation.
+<CardGroup cols={2}>
+  <Card title="Get Started" icon="rocket" href="/getting-started/quickstart">
+    Deploy SGIVU locally in minutes
+  </Card>
+  <Card title="Architecture Overview" icon="sitemap" href="/architecture">
+    Understand the system design
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/auth/oauth2">
+    Explore the REST APIs
+  </Card>
+  <Card title="Backend Services" icon="server" href="/services/overview">
+    Learn about each microservice
+  </Card>
+</CardGroup>
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+## Technology Stack
 
-## Need inspiration?
+SGIVU is built with modern, production-ready technologies:
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+- **Backend**: Spring Boot 4.0, Spring Cloud, Spring Security OAuth2
+- **Frontend**: Angular 21 with TypeScript
+- **ML Service**: FastAPI, scikit-learn, XGBoost
+- **Databases**: PostgreSQL, Redis
+- **Infrastructure**: Docker, Docker Compose, Nginx
+- **Observability**: Actuator, Micrometer, Zipkin
+
+## Architecture Highlights
+
+<Steps>
+  <Step title="API Gateway with BFF Pattern">
+    The gateway acts as a Backend-For-Frontend, managing OAuth2 tokens securely with Redis session storage
+  </Step>
+  <Step title="Service Discovery">
+    Eureka service registry enables dynamic service-to-service communication
+  </Step>
+  <Step title="Centralized Configuration">
+    Spring Cloud Config Server manages configuration across all microservices
+  </Step>
+  <Step title="ML Integration">
+    FastAPI-based ML service provides demand prediction APIs with model retraining capabilities
+  </Step>
+</Steps>
+
+## What's Inside
+
+### Core Services
+
+- **sgivu-auth**: OAuth 2.1/OIDC Authorization Server
+- **sgivu-gateway**: API Gateway with BFF pattern
+- **sgivu-user**: User and role management
+- **sgivu-vehicle**: Vehicle catalog and image management
+- **sgivu-client**: Client relationship management
+- **sgivu-purchase-sale**: Transaction tracking
+- **sgivu-ml**: Demand prediction service
+
+### Supporting Infrastructure
+
+- **sgivu-config**: Centralized configuration server
+- **sgivu-discovery**: Eureka service registry
+- **sgivu-frontend**: Angular-based web application
+
+## Get Started
+
+<CardGroup cols={1}>
+  <Card title="Quickstart Guide" icon="play" href="/getting-started/quickstart" horizontal>
+    Deploy the complete stack with Docker Compose and make your first API call
+  </Card>
+</CardGroup>

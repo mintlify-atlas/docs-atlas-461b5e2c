@@ -1,0 +1,726 @@
+---
+title: Prediction API Reference
+description: REST API endpoints for demand forecasting and model operations
+---
+
+## Base URL
+
+All ML endpoints are prefixed with `/v1/ml` and typically accessed through the API gateway:
+
+```
+https://api.sgivu.com/v1/ml
+```
+
+For direct access during development:
+```
+http://localhost:8000/v1/ml
+```
+
+## Authentication
+
+<Info>
+All endpoints require authentication via JWT token or internal service key.
+</Info>
+
+### JWT Token (External Clients)
+
+```bash
+curl -H "Authorization: Bearer YOUR_JWT_TOKEN" \
+  https://api.sgivu.com/v1/ml/predict
+```
+
+### Internal Service Key
+
+```bash
+curl -H "X-Internal-Service-Key: YOUR_SERVICE_KEY" \
+  http://sgivu-ml:8000/v1/ml/predict
+```
+
+## Endpoints
+
+### Health Check
+
+<ParamField path="/health" type="GET">
+  Basic health check endpoint without authentication.
+</ParamField>
+
+#### Request
+
+```bash
+GET /health
+```
+
+#### Response
+
+```json
+{
+  "status": "ok",
+  "version": "v1"
+}
+```
+
+---
+
+### Predict Demand
+
+<ParamField path="/v1/ml/predict" type="POST">
+  Generate demand forecast for a specific vehicle segment.
+</ParamField>
+
+**Required Permissions**: `sgivu.ml.predict` or internal service key
+
+#### Request Schema
+
+```json
+{
+  "vehicle_type": "CAR",
+  "brand": "TOYOTA",
+  "model": "COROLLA",
+  "line": "XEI 2.0",
+  "horizon_months": 6,
+  "confidence": 0.95
+}
+```
+
+#### Request Parameters
+
+<ParamField body="vehicle_type" type="string" required>
+  Vehicle category: `CAR` or `MOTORCYCLE`
+</ParamField>
+
+<ParamField body="brand" type="string" required>
+  Vehicle manufacturer (e.g., TOYOTA, HONDA, FORD)
+</ParamField>
+
+<ParamField body="model" type="string" required>
+  Vehicle model name (e.g., COROLLA, CIVIC, F-150)
+</ParamField>
+
+<ParamField body="line" type="string" required>
+  Specific vehicle trim/version (e.g., "XEI 2.0", "EX-L", "LARIAT")
+  
+  <Warning>
+  The `line` field is mandatory and cannot be empty. All segments must have a defined line.
+  </Warning>
+</ParamField>
+
+<ParamField body="horizon_months" type="integer" default="6">
+  Number of months to forecast ahead (1-24)
+  
+  - Minimum: 1
+  - Maximum: 24
+  - Default: 6
+</ParamField>
+
+<ParamField body="confidence" type="float" default="0.95">
+  Confidence level for prediction intervals (0.5-0.99)
+  
+  - Minimum: 0.50 (50%)
+  - Maximum: 0.99 (99%)
+  - Default: 0.95 (95%)
+  - Common values: 0.80, 0.90, 0.95, 0.99
+</ParamField>
+
+#### Response Schema
+
+```json
+{
+  "predictions": [
+    {
+      "month": "2026-04-01",
+      "demand": 45.3,
+      "lower_ci": 38.1,
+      "upper_ci": 52.5
+    },
+    {
+      "month": "2026-05-01",
+      "demand": 47.8,
+      "lower_ci": 40.2,
+      "upper_ci": 55.4
+    }
+  ],
+  "model_version": "20260306_143022",
+  "metrics": {
+    "rmse": 3.24,
+    "mae": 2.15,
+    "mape": 0.087,
+    "r2": 0.89,
+    "residual_std": 2.8
+  }
+}
+```
+
+#### Response Fields
+
+<ResponseField name="predictions" type="array">
+  Array of monthly forecast points
+  
+  <Expandable title="MonthlyPrediction object">
+    <ResponseField name="month" type="string">
+      ISO 8601 date (YYYY-MM-DD) representing the first day of the month
+    </ResponseField>
+    
+    <ResponseField name="demand" type="float">
+      Point estimate of expected sales count
+    </ResponseField>
+    
+    <ResponseField name="lower_ci" type="float">
+      Lower bound of confidence interval (always ≥ 0)
+    </ResponseField>
+    
+    <ResponseField name="upper_ci" type="float">
+      Upper bound of confidence interval
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="model_version" type="string">
+  Timestamp-based version identifier of the model used (format: `YYYYMMDD_HHMMSS`)
+</ResponseField>
+
+<ResponseField name="metrics" type="object" optional>
+  Performance metrics from model training
+  
+  - `rmse`: Root Mean Squared Error
+  - `mae`: Mean Absolute Error
+  - `mape`: Mean Absolute Percentage Error
+  - `r2`: R-squared (coefficient of determination)
+  - `residual_std`: Standard deviation of residuals (used for CI calculation)
+</ResponseField>
+
+#### Example Request
+
+<CodeGroup>
+```bash cURL
+curl -X POST https://api.sgivu.com/v1/ml/predict \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "vehicle_type": "CAR",
+    "brand": "CHEVROLET",
+    "model": "ONIX",
+    "line": "LTZ 1.4",
+    "horizon_months": 12,
+    "confidence": 0.90
+  }'
+```
+
+```python Python
+import httpx
+
+response = httpx.post(
+    "https://api.sgivu.com/v1/ml/predict",
+    headers={"Authorization": f"Bearer {token}"},
+    json={
+        "vehicle_type": "CAR",
+        "brand": "CHEVROLET",
+        "model": "ONIX",
+        "line": "LTZ 1.4",
+        "horizon_months": 12,
+        "confidence": 0.90
+    }
+)
+
+data = response.json()
+for pred in data["predictions"]:
+    print(f"{pred['month']}: {pred['demand']:.1f} units")
+```
+
+```javascript JavaScript
+const response = await fetch('https://api.sgivu.com/v1/ml/predict', {
+  method: 'POST',
+  headers: {
+    'Authorization': `Bearer ${token}`,
+    'Content-Type': 'application/json'
+  },
+  body: JSON.stringify({
+    vehicle_type: 'CAR',
+    brand: 'CHEVROLET',
+    model: 'ONIX',
+    line: 'LTZ 1.4',
+    horizon_months: 12,
+    confidence: 0.90
+  })
+});
+
+const data = await response.json();
+console.log(`Model version: ${data.model_version}`);
+```
+</CodeGroup>
+
+---
+
+### Predict with History
+
+<ParamField path="/v1/ml/predict-with-history" type="POST">
+  Generate forecast and return historical sales data for visualization.
+</ParamField>
+
+**Required Permissions**: `sgivu.ml.predict` or internal service key
+
+<Info>
+This endpoint is ideal for building charts that show both historical trends and future predictions.
+</Info>
+
+#### Request Schema
+
+Identical to `/predict` endpoint (see above).
+
+#### Response Schema
+
+```json
+{
+  "predictions": [
+    {
+      "month": "2026-04-01",
+      "demand": 45.3,
+      "lower_ci": 38.1,
+      "upper_ci": 52.5
+    }
+  ],
+  "history": [
+    {
+      "month": "2025-01-01",
+      "sales_count": 42.0
+    },
+    {
+      "month": "2025-02-01",
+      "sales_count": 38.0
+    },
+    {
+      "month": "2025-03-01",
+      "sales_count": 44.0
+    }
+  ],
+  "segment": {
+    "vehicle_type": "CAR",
+    "brand": "CHEVROLET",
+    "model": "ONIX",
+    "line": "LTZ 1.4"
+  },
+  "model_version": "20260306_143022",
+  "trained_at": "2026-03-06T14:30:22.123456+00:00",
+  "metrics": {
+    "rmse": 3.24,
+    "mae": 2.15,
+    "mape": 0.087,
+    "r2": 0.89,
+    "residual_std": 2.8
+  }
+}
+```
+
+#### Additional Response Fields
+
+<ResponseField name="history" type="array">
+  Array of historical monthly sales data
+  
+  <Expandable title="HistoricalPoint object">
+    <ResponseField name="month" type="string">
+      ISO 8601 date (YYYY-MM-DD)
+    </ResponseField>
+    
+    <ResponseField name="sales_count" type="float">
+      Actual sales count for that month
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
+<ResponseField name="segment" type="object">
+  Normalized segment identifiers used for the prediction
+  
+  - `vehicle_type`: Canonicalized vehicle type
+  - `brand`: Canonicalized brand name
+  - `model`: Canonicalized model name
+  - `line`: Canonicalized line/trim
+</ResponseField>
+
+<ResponseField name="trained_at" type="string" optional>
+  ISO 8601 timestamp when the model was trained
+</ResponseField>
+
+#### Example Request
+
+```bash
+curl -X POST https://api.sgivu.com/v1/ml/predict-with-history \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "vehicle_type": "MOTORCYCLE",
+    "brand": "HONDA",
+    "model": "CG 160",
+    "line": "START",
+    "horizon_months": 6,
+    "confidence": 0.95
+  }'
+```
+
+---
+
+### Retrain Model
+
+<ParamField path="/v1/ml/retrain" type="POST">
+  Trigger model retraining with fresh data from the database.
+</ParamField>
+
+**Required Permissions**: `sgivu.ml.retrain` or internal service key
+
+<Warning>
+Retraining is a resource-intensive operation. Use with caution in production environments.
+</Warning>
+
+#### Request Schema
+
+```json
+{
+  "start_date": "2024-01-01",
+  "end_date": "2026-03-06"
+}
+```
+
+#### Request Parameters
+
+<ParamField body="start_date" type="string" optional>
+  Start date for training data (ISO 8601 format: YYYY-MM-DD)
+  
+  If omitted, uses all available historical data.
+</ParamField>
+
+<ParamField body="end_date" type="string" optional>
+  End date for training data (ISO 8601 format: YYYY-MM-DD)
+  
+  If omitted, uses data up to the current date.
+</ParamField>
+
+#### Response Schema
+
+```json
+{
+  "version": "20260306_150845",
+  "metrics": {
+    "rmse": 2.89,
+    "mae": 1.92,
+    "mape": 0.072,
+    "r2": 0.91,
+    "residual_std": 2.45
+  },
+  "trained_at": "2026-03-06T15:08:45.678901+00:00",
+  "samples": {
+    "train": 1847,
+    "test": 462,
+    "total": 2309
+  }
+}
+```
+
+#### Response Fields
+
+<ResponseField name="version" type="string">
+  Unique version identifier for the new model (timestamp-based)
+</ResponseField>
+
+<ResponseField name="metrics" type="object">
+  Performance metrics from model evaluation
+  
+  - `rmse`: Lower is better (same units as target variable)
+  - `mae`: Mean absolute error
+  - `mape`: Percentage error (0.072 = 7.2%)
+  - `r2`: Closer to 1.0 is better
+  - `residual_std`: Used for confidence interval calculations
+</ResponseField>
+
+<ResponseField name="trained_at" type="string">
+  ISO 8601 timestamp when training completed
+</ResponseField>
+
+<ResponseField name="samples" type="object">
+  Dataset split information
+  
+  - `train`: Number of samples used for training
+  - `test`: Number of samples used for evaluation
+  - `total`: Total samples in dataset
+</ResponseField>
+
+#### Example Requests
+
+<CodeGroup>
+```bash Full Retrain
+# Retrain with all available data
+curl -X POST https://api.sgivu.com/v1/ml/retrain \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+```bash Date Range
+# Retrain with specific date range
+curl -X POST https://api.sgivu.com/v1/ml/retrain \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_date": "2024-01-01",
+    "end_date": "2026-02-28"
+  }'
+```
+
+```python Python
+import httpx
+from datetime import date
+
+response = httpx.post(
+    "https://api.sgivu.com/v1/ml/retrain",
+    headers={"Authorization": f"Bearer {token}"},
+    json={
+        "start_date": "2024-01-01",
+        "end_date": date.today().isoformat()
+    },
+    timeout=300.0  # Retraining can take several minutes
+)
+
+result = response.json()
+print(f"New model version: {result['version']}")
+print(f"R² score: {result['metrics']['r2']:.3f}")
+print(f"Trained on {result['samples']['total']} samples")
+```
+</CodeGroup>
+
+---
+
+### Get Latest Model
+
+<ParamField path="/v1/ml/models/latest" type="GET">
+  Retrieve metadata for the currently active model.
+</ParamField>
+
+**Required Permissions**: `sgivu.ml.models` or internal service key
+
+#### Request
+
+```bash
+GET /v1/ml/models/latest
+```
+
+#### Response Schema
+
+```json
+{
+  "version": "20260306_143022",
+  "trained_at": "2026-03-06T14:30:22.123456+00:00",
+  "target": "sales_count",
+  "features": [
+    "vehicle_type",
+    "brand",
+    "model",
+    "line",
+    "purchases_count",
+    "avg_margin",
+    "avg_sale_price",
+    "avg_purchase_price",
+    "avg_days_inventory",
+    "inventory_rotation",
+    "lag_1",
+    "lag_3",
+    "lag_6",
+    "rolling_mean_3",
+    "rolling_mean_6",
+    "month",
+    "year",
+    "month_sin",
+    "month_cos"
+  ],
+  "metrics": {
+    "rmse": 3.24,
+    "mae": 2.15,
+    "mape": 0.087,
+    "r2": 0.89,
+    "residual_std": 2.8
+  },
+  "candidates": [
+    {
+      "model": "linear_regression",
+      "rmse": 4.12,
+      "mae": 3.05,
+      "mape": 0.124,
+      "r2": 0.76,
+      "samples": 462
+    },
+    {
+      "model": "random_forest",
+      "rmse": 3.45,
+      "mae": 2.31,
+      "mape": 0.095,
+      "r2": 0.85,
+      "samples": 462
+    },
+    {
+      "model": "xgboost",
+      "rmse": 3.24,
+      "mae": 2.15,
+      "mape": 0.087,
+      "r2": 0.89,
+      "samples": 462
+    }
+  ],
+  "train_samples": 1847,
+  "test_samples": 462,
+  "total_samples": 2309
+}
+```
+
+#### Response Fields
+
+<ResponseField name="version" type="string">
+  Model version identifier
+</ResponseField>
+
+<ResponseField name="trained_at" type="string">
+  Training completion timestamp
+</ResponseField>
+
+<ResponseField name="target" type="string">
+  Target variable name (typically `sales_count`)
+</ResponseField>
+
+<ResponseField name="features" type="array">
+  List of feature names used by the model
+</ResponseField>
+
+<ResponseField name="metrics" type="object">
+  Performance metrics of the selected best model
+</ResponseField>
+
+<ResponseField name="candidates" type="array">
+  Comparison of all evaluated models during training
+  
+  Shows which algorithm performed best and by how much.
+</ResponseField>
+
+<ResponseField name="train_samples" type="integer">
+  Number of samples in training set
+</ResponseField>
+
+<ResponseField name="test_samples" type="integer">
+  Number of samples in test set
+</ResponseField>
+
+<ResponseField name="total_samples" type="integer">
+  Total dataset size
+</ResponseField>
+
+#### Example
+
+```bash
+curl https://api.sgivu.com/v1/ml/models/latest \
+  -H "Authorization: Bearer YOUR_TOKEN"
+```
+
+---
+
+## Error Responses
+
+All endpoints follow consistent error response format:
+
+```json
+{
+  "detail": "Error message describing what went wrong"
+}
+```
+
+### Common Error Codes
+
+<ResponseField name="400 Bad Request">
+  Invalid input parameters or missing required fields
+  
+  ```json
+  {"detail": "Falta la línea del vehículo. Incluye brand/model/line completos para predecir."}
+  ```
+</ResponseField>
+
+<ResponseField name="401 Unauthorized">
+  Missing or invalid authentication token
+  
+  ```json
+  {"detail": "Invalid token or authentication required"}
+  ```
+</ResponseField>
+
+<ResponseField name="403 Forbidden">
+  Insufficient permissions for the requested operation
+  
+  ```json
+  {"detail": "Missing required permission: sgivu.ml.retrain"}
+  ```
+</ResponseField>
+
+<ResponseField name="404 Not Found">
+  Requested resource doesn't exist
+  
+  ```json
+  {"detail": "No se encontró historial para la combinación solicitada."}
+  ```
+</ResponseField>
+
+<ResponseField name="422 Unprocessable Entity">
+  Validation error in request payload
+  
+  ```json
+  {
+    "detail": [
+      {
+        "loc": ["body", "horizon_months"],
+        "msg": "ensure this value is less than or equal to 24",
+        "type": "value_error.number.not_le"
+      }
+    ]
+  }
+  ```
+</ResponseField>
+
+<ResponseField name="500 Internal Server Error">
+  Unexpected server error (check logs)
+  
+  ```json
+  {"detail": "Aún no existe un modelo entrenado."}
+  ```
+</ResponseField>
+
+## Rate Limiting
+
+<Note>
+Rate limiting is typically handled at the API gateway level. Check gateway documentation for specific limits.
+</Note>
+
+## OpenAPI Specification
+
+The complete OpenAPI 3.0 specification is available at:
+
+```
+GET /openapi.json
+```
+
+You can import this into Postman, Insomnia, or other API clients for automatic request generation.
+
+## SDK Examples
+
+For more comprehensive examples and client library usage, see:
+
+- [Training Process](/ml/training) - Feature engineering and model training details
+- [Model Management](/ml/model-management) - Versioning and lifecycle management
+- [Frontend Integration](/frontend/features) - Building client applications
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Try the API" icon="flask">
+    Test endpoints using the interactive docs at `/docs`
+  </Card>
+  <Card title="Understanding Predictions" icon="chart-line" href="/ml/training">
+    Learn how forecasts are generated
+  </Card>
+  <Card title="Model Versioning" icon="code-branch" href="/ml/model-management">
+    Manage and compare model versions
+  </Card>
+  <Card title="Authentication" icon="lock" href="/auth/overview">
+    Configure JWT and permissions
+  </Card>
+</CardGroup>

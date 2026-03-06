@@ -1,0 +1,546 @@
+---
+title: Configuration
+description: Complete guide to configuring SGIVU environment variables and settings
+---
+
+SGIVU uses environment variables to configure all microservices. This guide explains each configuration option, its purpose, and critical dependencies between variables.
+
+## Configuration Flow
+
+SGIVU's configuration follows this hierarchy:
+
+```
+.env / .env.dev (environment files)
+    ↓
+docker-compose.yml (container environment)
+    ↓
+Config Server (centralized YAML configs with ${VAR} placeholders)
+    ↓
+Spring Boot @Value / Pydantic Settings (application runtime)
+```
+
+The `SPRING_PROFILES_ACTIVE` variable is the master switch that selects between `dev` and `prod` configuration overlays.
+
+## Environment Files
+
+SGIVU provides two environment templates:
+
+- **`.env.example`** - Production template with placeholders
+- **`.env.dev.example`** - Development template with working defaults
+
+<Warning>
+Never commit actual `.env` or `.env.dev` files with real secrets to version control. Always use `.example` templates and replace placeholders.
+</Warning>
+
+## Core Configuration
+
+### Spring Profile
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SPRING_PROFILES_ACTIVE` | `dev` | Selects configuration overlay: `dev` or `prod`. Determines which YAML files are loaded from Config Server. |
+
+**Development:**
+```bash
+SPRING_PROFILES_ACTIVE=dev
+```
+
+**Production:**
+```bash
+SPRING_PROFILES_ACTIVE=prod
+```
+
+### Service Discovery (Eureka)
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EUREKA_URL` | `http://sgivu-discovery:8761/eureka` | Eureka service registry URL. All services must register here. |
+
+<Warning>
+If `EUREKA_URL` is incorrect, services cannot register and the gateway will return 503 errors for all API routes.
+</Warning>
+
+```bash
+# Development (Docker network)
+EUREKA_URL=http://sgivu-discovery:8761/eureka
+
+# Production
+EUREKA_URL=http://your-ec2-host:8761/eureka
+```
+
+## Critical Configuration Dependencies
+
+Some variables have hidden dependencies that will break authentication if misconfigured:
+
+### SGIVU_AUTH_URL ↔ ISSUER_URL
+
+<Warning>
+These two variables **must match exactly** or all JWT validation will fail.
+</Warning>
+
+| Variable | Used By | Purpose |
+|----------|---------|----------|
+| `ISSUER_URL` | `sgivu-auth` | Written into the `iss` claim of every JWT token |
+| `SGIVU_AUTH_URL` | All resource servers | Used as `issuer-uri` to validate the `iss` claim |
+
+**Development:**
+```bash
+# Only SGIVU_AUTH_URL needed (ISSUER_URL uses default)
+SGIVU_AUTH_URL=http://sgivu-auth:9000
+```
+
+**Production:**
+```bash
+# Both must point to public hostname
+SGIVU_AUTH_URL=http://your-ec2-public-hostname
+ISSUER_URL=http://your-ec2-public-hostname
+```
+
+### REDIS_PASSWORD
+
+<Warning>
+This password must be identical in two places:
+1. Redis container `--requirepass` flag
+2. Gateway's `spring.data.redis.password` configuration
+</Warning>
+
+```bash
+REDIS_PASSWORD=your-secure-redis-password
+```
+
+If these don't match, the gateway cannot connect to Redis and **all HTTP sessions will fail**, preventing authentication.
+
+### SGIVU_GATEWAY_SECRET
+
+<Warning>
+`sgivu-auth` stores this secret hashed with BCrypt on first startup. Changing it later requires deleting the OAuth2 client registration from the database.
+</Warning>
+
+```bash
+SGIVU_GATEWAY_SECRET=your-gateway-oauth2-secret
+```
+
+This is the OAuth2 client secret used for the authorization code flow between `sgivu-auth` and `sgivu-gateway`.
+
+### SERVICE_INTERNAL_SECRET_KEY
+
+<Warning>
+This secret must be **identical in all 7 backend services + sgivu-ml**. If it differs in even one service, internal service-to-service calls will fail with 401/403.
+</Warning>
+
+```bash
+SERVICE_INTERNAL_SECRET_KEY=your-internal-service-secret
+```
+
+Used in the `X-Internal-Service-Key` header for service-to-service communication without JWT tokens.
+
+Examples of flows using this key:
+- `sgivu-auth` → `sgivu-user`: Validate credentials during login
+- `sgivu-ml` → `sgivu-purchase-sale`: Fetch contracts for training
+- `sgivu-ml` → `sgivu-vehicle`: Fetch vehicle data
+
+## Service URLs
+
+### Internal Service URLs
+
+These are used for direct service-to-service HTTP calls:
+
+```bash
+# Auth service (must match ISSUER_URL in production)
+SGIVU_AUTH_URL=http://sgivu-auth:9000
+
+# Gateway (for OAuth2 redirect URI registration)
+SGIVU_GATEWAY_URL=http://sgivu-gateway:8080
+
+# Business services
+SGIVU_USER_URL=http://sgivu-user:8081
+SGIVU_CLIENT_URL=http://sgivu-client:8082
+SGIVU_VEHICLE_URL=http://sgivu-vehicle:8083
+SGIVU_PURCHASE_SALE_URL=http://sgivu-purchase-sale:8084
+```
+
+<Note>
+The gateway uses Eureka service discovery (`lb://service-name`) and does **not** use these URL variables. These are only for direct service-to-service calls.
+</Note>
+
+### Frontend URL
+
+Controls CORS, OAuth2 redirects, and post-logout behavior:
+
+```bash
+# Development
+DEV_ANGULAR_APP_URL=http://localhost:4200
+
+# Production
+PROD_ANGULAR_APP_URL=http://your-ec2-public-hostname
+```
+
+<Info>
+`PROD_ANGULAR_APP_URL` must match the domains in `AWS_S3_ALLOWED_ORIGINS` for the browser to load vehicle images from S3 without CORS errors.
+</Info>
+
+## JWT Configuration
+
+### Keystore Settings
+
+SGIVU uses RSA keys stored in a JKS keystore for JWT signing:
+
+```bash
+JWT_KEYSTORE_LOCATION=classpath:keystore.jks
+JWT_KEYSTORE_PASSWORD=your-keystore-password
+JWT_KEY_ALIAS=sgivu-jwt
+JWT_KEY_PASSWORD=your-key-password
+```
+
+<Warning>
+If any of these values are incorrect, `sgivu-auth` will fail to start.
+</Warning>
+
+### Generate a keystore:
+
+```bash
+keytool -genkeypair -alias sgivu-jwt \
+  -keyalg RSA -keysize 2048 \
+  -storetype JKS -keystore keystore.jks \
+  -validity 3650 \
+  -storepass YOUR_KEYSTORE_PASSWORD \
+  -keypass YOUR_KEY_PASSWORD \
+  -dname "CN=SGIVU Auth, OU=Security, O=SGIVU, L=City, ST=State, C=US"
+```
+
+## Database Configuration
+
+### PostgreSQL (Shared Instance)
+
+All services share one PostgreSQL container but use separate databases:
+
+```bash
+# Container initialization
+POSTGRES_HOST=sgivu-postgres
+POSTGRES_DB=postgres
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=your-postgres-password
+```
+
+### Per-Service Database Configuration
+
+Each microservice has its own database:
+
+<CodeGroup>
+
+```bash Auth Service
+PROD_AUTH_DB_HOST=sgivu-postgres
+PROD_AUTH_DB_PORT=5432
+PROD_AUTH_DB_NAME=sgivu_auth_db
+PROD_AUTH_DB_USERNAME=postgres
+PROD_AUTH_DB_PASSWORD=your-postgres-password
+```
+
+```bash User Service
+PROD_USER_DB_HOST=sgivu-postgres
+PROD_USER_DB_PORT=5432
+PROD_USER_DB_NAME=sgivu_user_db
+PROD_USER_DB_USERNAME=postgres
+PROD_USER_DB_PASSWORD=your-postgres-password
+```
+
+```bash Client Service
+PROD_CLIENT_DB_HOST=sgivu-postgres
+PROD_CLIENT_DB_PORT=5432
+PROD_CLIENT_DB_NAME=sgivu_client_db
+PROD_CLIENT_DB_USERNAME=postgres
+PROD_CLIENT_DB_PASSWORD=your-postgres-password
+```
+
+```bash Vehicle Service
+PROD_VEHICLE_DB_HOST=sgivu-postgres
+PROD_VEHICLE_DB_PORT=5432
+PROD_VEHICLE_DB_NAME=sgivu_vehicle_db
+PROD_VEHICLE_DB_USERNAME=postgres
+PROD_VEHICLE_DB_PASSWORD=your-postgres-password
+```
+
+```bash Purchase-Sale Service
+PROD_PURCHASE_SALE_DB_HOST=sgivu-postgres
+PROD_PURCHASE_SALE_DB_PORT=5432
+PROD_PURCHASE_SALE_DB_NAME=sgivu_purchase_sale_db
+PROD_PURCHASE_SALE_DB_USERNAME=postgres
+PROD_PURCHASE_SALE_DB_PASSWORD=your-postgres-password
+```
+
+```bash ML Service
+PROD_ML_DB_HOST=sgivu-postgres
+PROD_ML_DB_PORT=5432
+PROD_ML_DB_NAME=sgivu_ml_db
+PROD_ML_DB_USERNAME=postgres
+PROD_ML_DB_PASSWORD=your-postgres-password
+```
+
+</CodeGroup>
+
+For development, use `DEV_` prefix instead of `PROD_`.
+
+### Flyway Migration
+
+```bash
+# Development: allows baseline on existing databases
+FLYWAY_BASELINE_ON_MIGRATE=true
+
+# Production: requires clean migration history
+FLYWAY_BASELINE_ON_MIGRATE=false
+```
+
+<Warning>
+In production, `FLYWAY_BASELINE_ON_MIGRATE=false` ensures you don't accidentally hide pending migrations.
+</Warning>
+
+## Redis Configuration
+
+Redis is used **exclusively by `sgivu-gateway`** for HTTP session storage (BFF pattern):
+
+```bash
+REDIS_HOST=sgivu-redis
+REDIS_PORT=6379
+REDIS_PASSWORD=your-redis-password
+```
+
+<Note>
+Redis is **not used** for:
+- Rate limiting
+- Caching
+- Direct `RedisTemplate` operations
+
+It only stores Spring Session data for the gateway.
+</Note>
+
+## AWS / S3 Configuration
+
+Required for vehicle image storage:
+
+```bash
+# AWS credentials
+AWS_ACCESS_KEY=your-aws-access-key
+AWS_SECRET_KEY=your-aws-secret-key
+AWS_REGION=us-east-1
+
+# S3 bucket
+AWS_VEHICLES_BUCKET=sgivu-vehicle-images
+
+# CORS origins (must match frontend URL)
+AWS_S3_ALLOWED_ORIGINS=http://your-frontend-url,http://your-s3-bucket-url
+```
+
+<Info>
+`AWS_S3_ALLOWED_ORIGINS` must include the same domains as `PROD_ANGULAR_APP_URL` to prevent CORS errors when loading images.
+</Info>
+
+## MySQL / Zipkin Configuration
+
+MySQL is used **exclusively as storage for Zipkin** distributed tracing:
+
+```bash
+# MySQL container
+MYSQL_HOST=sgivu-mysql
+MYSQL_ROOT_PASSWORD=your-mysql-root-password
+MYSQL_DATABASE=sgivu_zipkin_db
+MYSQL_USER=zipkin
+MYSQL_PASSWORD=your-mysql-password
+
+# Zipkin storage (uses different variable names)
+STORAGE_TYPE=mysql
+MYSQL_DB=sgivu_zipkin_db
+MYSQL_PASS=your-mysql-password
+```
+
+<Note>
+The Zipkin Docker image uses different variable names (`MYSQL_DB` vs `MYSQL_DATABASE`, `MYSQL_PASS` vs `MYSQL_PASSWORD`) for the same values.
+</Note>
+
+## ML Service Configuration (FastAPI)
+
+The ML service uses Pydantic Settings and consumes environment variables directly (not through Config Server):
+
+```bash
+# Environment
+ENVIRONMENT=prod
+APP_NAME=sgivu-ml
+APP_VERSION=0.1.0
+
+# Auth discovery
+SGIVU_AUTH_DISCOVERY_URL=http://sgivu-auth:9000/.well-known/openid-configuration
+
+# Model settings
+MODEL_DIR=models
+MODEL_NAME=demand_forecaster
+REQUEST_TIMEOUT_SECONDS=15
+DEFAULT_HORIZON_MONTHS=6
+MIN_HISTORY_MONTHS=1
+TARGET_COLUMN=sales_count
+
+# Retraining schedule
+RETRAIN_CRON="0 3 1 * *"
+RETRAIN_TIMEZONE=UTC
+
+# Permissions (leave empty to only require valid JWT)
+PERMISSIONS_PREDICT=ml:predict
+PERMISSIONS_RETRAIN=ml:retrain
+PERMISSIONS_MODELS=ml:models
+
+# Database
+DATABASE_ENV=prod
+PROD_ML_DB_HOST=sgivu-postgres
+PROD_ML_DB_PORT=5432
+PROD_ML_DB_NAME=sgivu_ml_db
+PROD_ML_DB_USERNAME=postgres
+PROD_ML_DB_PASSWORD=your-postgres-password
+DATABASE_AUTO_CREATE=false
+DATABASE_ECHO=false
+```
+
+<Warning>
+`SGIVU_AUTH_DISCOVERY_URL` must return an `issuer` field that matches `ISSUER_URL`, or JWT validation will fail.
+</Warning>
+
+## OpenAPI / Swagger Configuration
+
+```bash
+# Production only
+OPENAPI_SERVER_URL=http://your-ec2-public-hostname
+```
+
+This ensures "Try it out" in Swagger UI uses the correct hostname. In development, Swagger defaults to localhost.
+
+## Configuration Validation
+
+Validate your configuration before starting services:
+
+```bash
+# Check environment file syntax
+docker compose -f docker-compose.dev.yml --env-file .env.dev config
+
+# Verify all required variables are set
+grep -v '^#' .env.dev | grep '=.*your-.*-here'
+```
+
+Common validation issues:
+- Missing required variables
+- Mismatched paired variables (`ISSUER_URL` vs `SGIVU_AUTH_URL`)
+- Incorrect database credentials
+- Wrong CORS origins
+
+## Environment File Templates
+
+Complete working templates are available in the repository:
+
+<CardGroup cols={2}>
+  <Card title="Development Template" icon="code" href="https://github.com/your-org/sgivu/blob/main/infra/compose/sgivu-docker-compose/.env.dev.example">
+    `.env.dev.example` with working local defaults
+  </Card>
+  <Card title="Production Template" icon="server" href="https://github.com/your-org/sgivu/blob/main/infra/compose/sgivu-docker-compose/.env.example">
+    `.env.example` with placeholders for production
+  </Card>
+  <Card title="Variable Reference" icon="book" href="https://github.com/your-org/sgivu/blob/main/infra/compose/sgivu-docker-compose/ENV-REFERENCE.md">
+    Detailed explanation of every variable
+  </Card>
+  <Card title="Config Repository" icon="git" href="https://github.com/stevenrq/sgivu-config-repo">
+    Centralized YAML configuration repository
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+### Authentication Failures
+
+**Symptom**: All JWT tokens rejected
+
+**Solution**: Verify `ISSUER_URL` matches `SGIVU_AUTH_URL` exactly
+
+```bash
+# Check the actual issuer in a JWT token
+echo "eyJ..." | jq -R 'split(".") | .[1] | @base64d | fromjson | .iss'
+
+# Compare with configuration
+echo $ISSUER_URL
+echo $SGIVU_AUTH_URL
+```
+
+### Session Failures
+
+**Symptom**: Users can't stay logged in
+
+**Solution**: Verify Redis password matches in both places:
+
+```bash
+# Check Redis container
+docker compose -f docker-compose.dev.yml exec sgivu-redis redis-cli
+> AUTH your-redis-password
+
+# Check gateway can connect
+docker compose -f docker-compose.dev.yml logs sgivu-gateway | grep -i redis
+```
+
+### Service Discovery Issues
+
+**Symptom**: Gateway returns 503 for all routes
+
+**Solution**: Check services are registered with Eureka:
+
+```bash
+curl http://localhost:8761/eureka/apps | grep -i "<app>"
+```
+
+### Database Connection Issues
+
+**Symptom**: Services fail to start with database errors
+
+**Solution**: Verify credentials and database names:
+
+```bash
+# Test PostgreSQL connection
+docker compose -f docker-compose.dev.yml exec sgivu-postgres psql -U postgres -c "\l"
+
+# Check database logs
+docker compose -f docker-compose.dev.yml logs sgivu-postgres
+```
+
+## Security Best Practices
+
+<Warning>
+**Never commit secrets to version control:**
+- Add `.env` and `.env.dev` to `.gitignore`
+- Use secrets managers in production (AWS Secrets Manager, HashiCorp Vault)
+- Rotate secrets regularly
+- Use strong passwords (32+ characters)
+</Warning>
+
+<Tip>
+**Secret generation examples:**
+
+```bash
+# Generate strong random secrets
+openssl rand -base64 32
+
+# For SERVICE_INTERNAL_SECRET_KEY
+openssl rand -hex 64
+
+# For JWT keystore password
+openssl rand -base64 24
+```
+</Tip>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Docker Deployment" icon="docker" href="/getting-started/docker-deployment">
+    Learn about the Docker Compose architecture
+  </Card>
+  <Card title="Architecture Overview" icon="sitemap" href="/architecture">
+    Understand the microservices architecture
+  </Card>
+  <Card title="Security" icon="shield" href="/security/oauth2-oidc">
+    Learn about OAuth2, JWT, and BFF pattern
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/auth/oauth2">
+    Explore the API documentation
+  </Card>
+</CardGroup>

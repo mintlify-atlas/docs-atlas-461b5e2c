@@ -1,0 +1,683 @@
+---
+title: Monitoring & Observability
+description: Health checks, distributed tracing, and observability features in SGIVU
+---
+
+## Overview
+
+SGIVU implements comprehensive observability across all services using Spring Boot Actuator, Micrometer Tracing, and Zipkin for distributed tracing. This enables real-time health monitoring, performance analysis, and distributed request correlation.
+
+## Health Checks
+
+### Actuator Endpoints
+
+All Spring Boot services expose health check endpoints via Spring Boot Actuator:
+
+| Service | Endpoint | Port |
+|---------|----------|------|
+| sgivu-auth | `/actuator/health` | 9000 |
+| sgivu-gateway | `/actuator/health` | 8080 |
+| sgivu-config | `/actuator/health` | 8888 |
+| sgivu-discovery | `/actuator/health` | 8761 |
+| sgivu-user | `/actuator/health` | 8081 |
+| sgivu-client | `/actuator/health` | 8082 |
+| sgivu-vehicle | `/actuator/health` | 8083 |
+| sgivu-purchase-sale | `/actuator/health` | 8084 |
+| sgivu-ml (FastAPI) | `/health` or `/actuator/health` | 8000 |
+
+### Health Check Examples
+
+#### Spring Boot Services
+
+```bash
+# Gateway health
+curl http://localhost:8080/actuator/health
+
+# Response
+{
+  "status": "UP",
+  "components": {
+    "diskSpace": {
+      "status": "UP",
+      "details": {
+        "total": 250790436864,
+        "free": 100000000000,
+        "threshold": 10485760
+      }
+    },
+    "ping": {
+      "status": "UP"
+    },
+    "redis": {
+      "status": "UP",
+      "details": {
+        "version": "7.0.0"
+      }
+    }
+  }
+}
+```
+
+#### ML Service (FastAPI)
+
+```bash
+curl http://localhost:8000/health
+
+# Response
+{
+  "status": "healthy",
+  "service": "sgivu-ml",
+  "version": "0.1.0"
+}
+```
+
+### Environment-Specific Exposure
+
+Actuator endpoint exposure varies by profile:
+
+**Development** (`application-dev.yml`):
+```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus,env,configprops
+```
+
+**Production** (`application-prod.yml`):
+```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+```
+
+<Warning>
+  In production, restrict actuator endpoints to internal networks or require authentication. Exposing metrics and environment details publicly is a security risk.
+</Warning>
+
+### Liveness and Readiness Probes
+
+For Kubernetes deployments:
+
+```yaml
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+  health:
+    livenessState:
+      enabled: true
+    readinessState:
+      enabled: true
+```
+
+**Endpoints**:
+- `GET /actuator/health/liveness`: Liveness probe (should restart if DOWN)
+- `GET /actuator/health/readiness`: Readiness probe (should not receive traffic if DOWN)
+
+## Distributed Tracing
+
+### Zipkin Integration
+
+SGIVU uses Zipkin for distributed tracing with MySQL storage for persistence.
+
+#### Architecture
+
+```
+┌──────────────┐
+│   Client     │
+└──────┬───────┘
+       │ Request (trace-id generated)
+       ▼
+┌──────────────┐  span  ┌───────────┐
+│   Gateway    ├────────►│  Zipkin   │
+└──────┬───────┘         │   :9411   │
+       │                 └─────┬─────┘
+       │ (trace-id relay)      │
+       ▼                       │ Store
+┌──────────────┐  span         ▼
+│     User     ├────────► ┌──────────┐
+│   Service    │          │  MySQL   │
+└──────┬───────┘          │  Zipkin  │
+       │                  │    DB    │
+       │ (trace-id relay) └──────────┘
+       ▼
+┌──────────────┐  span
+│     Auth     ├────────► Zipkin
+│   Service    │
+└──────────────┘
+```
+
+#### Zipkin Configuration
+
+**Docker Compose** (`docker-compose.yml`):
+```yaml
+sgivu-zipkin:
+  container_name: sgivu-zipkin
+  image: openzipkin/zipkin
+  ports:
+    - "9411:9411"
+  restart: always
+  networks:
+    - sgivu-network
+  env_file: .env
+  depends_on:
+    - sgivu-mysql
+```
+
+**Environment Variables**:
+```bash
+STORAGE_TYPE=mysql
+MYSQL_HOST=sgivu-mysql
+MYSQL_DB=sgivu_zipkin_db
+MYSQL_USER=zipkin
+MYSQL_PASS=your-mysql-password
+```
+
+#### Service Configuration
+
+Each Spring Boot service configures tracing:
+
+```yaml
+management:
+  tracing:
+    sampling:
+      probability: 1.0  # 100% sampling in dev, reduce in prod (e.g., 0.1)
+  zipkin:
+    tracing:
+      endpoint: http://sgivu-zipkin:9411/api/v2/spans
+```
+
+**Production Sampling**:
+```yaml
+management:
+  tracing:
+    sampling:
+      probability: 0.1  # Sample 10% of requests
+```
+
+<Info>
+  Lower sampling rates reduce overhead in high-traffic production environments while maintaining observability for debugging.
+</Info>
+
+### Trace ID Propagation
+
+SGIVU uses custom filters to ensure trace ID propagation:
+
+#### Gateway: ZipkinTracingGlobalFilter
+
+**File**: `apps/backend/sgivu-gateway/.../ZipkinTracingGlobalFilter.java`
+
+**Actions**:
+1. Creates spans for each request
+2. Adds `X-Trace-Id` header to requests and responses
+3. Tags spans with status code and duration
+
+**Example Response Headers**:
+```
+X-Trace-Id: 5f3e8c9a2b1d4e6f
+X-Application-Context: sgivu-gateway:prod:8080
+```
+
+#### Trace Context
+
+**Logged Attributes**:
+- `trace-id`: Unique identifier for the entire request flow
+- `span-id`: Unique identifier for each service call
+- `parent-span-id`: Parent span (for nested calls)
+- `service.name`: Service name (e.g., `sgivu-gateway`)
+- `http.method`: Request method (GET, POST, etc.)
+- `http.url`: Request URL
+- `http.status_code`: Response status
+
+### Zipkin UI
+
+**Access**: `http://localhost:9411` (development) or `http://your-ec2-hostname/zipkin/` (production)
+
+#### Features
+
+**1. Trace Search**
+- Search by service name
+- Search by span name
+- Search by tag (e.g., `http.status_code=500`)
+- Time range filtering
+
+**2. Trace Details**
+- Complete request timeline
+- Service dependencies
+- Span duration breakdown
+- Tags and annotations
+
+**3. Service Dependencies**
+- Visualize service call graph
+- Identify bottlenecks
+- Detect circular dependencies
+
+**Example Trace**:
+```
+Gateway (200ms)
+├─ User Service (50ms)
+│  └─ Auth Service (20ms)  ← Credential validation
+├─ Client Service (30ms)
+└─ Vehicle Service (80ms)
+   └─ S3 Upload (60ms)      ← Image upload
+```
+
+### Custom Spans
+
+Services create custom spans for specific operations:
+
+**Auth Service** (`sgivu-auth`):
+- `CredentialsValidationService.validateCredentials()`: Span for credential validation
+- `JpaUserDetailsService.loadUserByUsername()`: Span for user loading
+
+**Example Code**:
+```java
+@Observed(name = "credentials.validation",
+          contextualName = "validate-user-credentials")
+public boolean validateCredentials(String username, String password) {
+    // Validation logic
+}
+```
+
+## Service Discovery Monitoring
+
+### Eureka Dashboard
+
+**Access**: `http://localhost:8761` (development) or `http://your-ec2-hostname/eureka/` (production)
+
+#### Dashboard Features
+
+**1. Instance Status**
+- Service name
+- Instance count
+- Instance IDs
+- Status (UP, DOWN, OUT_OF_SERVICE)
+
+**2. System Information**
+- Environment
+- Data center
+- Uptime
+
+**3. Registered Applications**
+```
+Application         | AMIs        | Availability Zones | Status
+--------------------|-------------|--------------------|---------
+SGIVU-AUTH          | n/a (1)     | (1)               | UP (1)
+SGIVU-GATEWAY       | n/a (1)     | (1)               | UP (1)
+SGIVU-USER          | n/a (1)     | (1)               | UP (1)
+SGIVU-CLIENT        | n/a (1)     | (1)               | UP (1)
+SGIVU-VEHICLE       | n/a (1)     | (1)               | UP (1)
+SGIVU-PURCHASE-SALE | n/a (1)     | (1)               | UP (1)
+```
+
+### REST API
+
+**Get All Applications**:
+```bash
+curl http://localhost:8761/eureka/apps
+```
+
+**Get Specific Application**:
+```bash
+curl http://localhost:8761/eureka/apps/SGIVU-GATEWAY
+```
+
+**Response** (XML):
+```xml
+<application>
+  <name>SGIVU-GATEWAY</name>
+  <instance>
+    <instanceId>sgivu-gateway:8080</instanceId>
+    <hostName>sgivu-gateway</hostName>
+    <app>SGIVU-GATEWAY</app>
+    <ipAddr>172.18.0.10</ipAddr>
+    <status>UP</status>
+    <port enabled="true">8080</port>
+    <healthCheckUrl>http://sgivu-gateway:8080/actuator/health</healthCheckUrl>
+  </instance>
+</application>
+```
+
+<Warning>
+  Eureka dashboard is exposed without authentication. In production, use IP whitelisting or VPN access.
+</Warning>
+
+## Logging
+
+### Log Levels
+
+**Development**:
+```yaml
+logging:
+  level:
+    root: INFO
+    com.sgivu: DEBUG
+    org.springframework.security: DEBUG
+    org.springframework.cloud.gateway: DEBUG
+```
+
+**Production**:
+```yaml
+logging:
+  level:
+    root: INFO
+    com.sgivu: INFO
+    org.springframework.security: WARN
+```
+
+### Structured Logging
+
+Services use SLF4J with Logback for structured logging:
+
+**Log Format**:
+```
+%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [%X{trace-id},%X{span-id}] %logger{36} - %msg%n
+```
+
+**Example Log**:
+```
+2026-03-06 10:15:23.456 [http-nio-8080-exec-1] INFO  [5f3e8c9a2b1d4e6f,a1b2c3d4e5f6] c.s.g.filter.ZipkinTracingGlobalFilter - Request: GET /v1/users
+2026-03-06 10:15:23.512 [http-nio-8080-exec-1] INFO  [5f3e8c9a2b1d4e6f,a1b2c3d4e5f6] c.s.g.filter.ZipkinTracingGlobalFilter - Response: 200 (56ms)
+```
+
+### Viewing Logs
+
+**Docker Compose**:
+```bash
+# All services
+docker compose logs -f
+
+# Specific service
+docker compose logs -f sgivu-gateway
+
+# Last 100 lines
+docker compose logs --tail=100 sgivu-gateway
+
+# Since timestamp
+docker compose logs --since 2026-03-06T10:00:00 sgivu-gateway
+```
+
+**Filter by Trace ID**:
+```bash
+docker compose logs sgivu-gateway | grep "5f3e8c9a2b1d4e6f"
+```
+
+## Metrics
+
+### Micrometer Metrics
+
+Spring Boot services expose Prometheus-compatible metrics:
+
+```bash
+curl http://localhost:8080/actuator/metrics
+
+# Response
+{
+  "names": [
+    "jvm.memory.used",
+    "jvm.memory.max",
+    "http.server.requests",
+    "spring.cloud.gateway.requests",
+    "resilience4j.circuitbreaker.state",
+    "system.cpu.usage"
+  ]
+}
+```
+
+### Key Metrics
+
+#### JVM Metrics
+- `jvm.memory.used`: Memory usage by heap/non-heap
+- `jvm.threads.live`: Active thread count
+- `jvm.gc.pause`: Garbage collection pause times
+
+#### HTTP Metrics
+- `http.server.requests`: Request count, duration, status
+- `http.client.requests`: Outbound request metrics
+
+#### Gateway Metrics
+- `spring.cloud.gateway.requests`: Gateway request count by route
+- `gateway.requests.duration`: Request duration histogram
+
+#### Circuit Breaker Metrics
+- `resilience4j.circuitbreaker.state`: Circuit breaker state (closed, open, half-open)
+- `resilience4j.circuitbreaker.calls`: Call results (success, failure)
+- `resilience4j.circuitbreaker.buffered.calls`: Buffered calls in sliding window
+
+#### Redis Metrics (Gateway)
+- `spring.data.redis.connections.active`: Active Redis connections
+- `spring.session.redis.operations`: Session operations (save, load, delete)
+
+### Prometheus Integration
+
+**Enable Prometheus Endpoint**:
+```yaml
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  metrics:
+    export:
+      prometheus:
+        enabled: true
+```
+
+**Scrape Configuration** (`prometheus.yml`):
+```yaml
+scrape_configs:
+  - job_name: 'sgivu-gateway'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['sgivu-gateway:8080']
+  
+  - job_name: 'sgivu-auth'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['sgivu-auth:9000']
+  
+  - job_name: 'sgivu-user'
+    metrics_path: '/actuator/prometheus'
+    static_configs:
+      - targets: ['sgivu-user:8081']
+```
+
+## Alerting
+
+### Health Check Monitoring
+
+**Simple Script** (`monitor-health.sh`):
+```bash
+#!/bin/bash
+
+SERVICES=(
+  "http://localhost:8080/actuator/health"  # Gateway
+  "http://localhost:9000/actuator/health"  # Auth
+  "http://localhost:8081/actuator/health"  # User
+  "http://localhost:8082/actuator/health"  # Client
+  "http://localhost:8083/actuator/health"  # Vehicle
+  "http://localhost:8084/actuator/health"  # Purchase-sale
+  "http://localhost:8000/health"           # ML
+)
+
+for SERVICE in "${SERVICES[@]}"; do
+  STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$SERVICE")
+  if [ "$STATUS" -ne 200 ]; then
+    echo "ALERT: $SERVICE is DOWN (HTTP $STATUS)"
+    # Send alert (email, Slack, PagerDuty, etc.)
+  fi
+done
+```
+
+### Prometheus Alertmanager
+
+**Alert Rules** (`alerts.yml`):
+```yaml
+groups:
+  - name: sgivu_alerts
+    interval: 30s
+    rules:
+      - alert: ServiceDown
+        expr: up{job=~"sgivu-.*"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "SGIVU service {{ $labels.job }} is down"
+          description: "{{ $labels.instance }} has been down for more than 1 minute"
+      
+      - alert: HighErrorRate
+        expr: rate(http_server_requests_seconds_count{status=~"5.."}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High error rate on {{ $labels.job }}"
+          description: "Error rate is {{ $value }} req/s"
+      
+      - alert: CircuitBreakerOpen
+        expr: resilience4j_circuitbreaker_state{state="open"} == 1
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Circuit breaker {{ $labels.name }} is OPEN"
+          description: "Circuit breaker has been open for more than 2 minutes"
+```
+
+## Performance Monitoring
+
+### Request Duration Analysis
+
+**Zipkin**: Analyze slow requests
+1. Navigate to Zipkin UI
+2. Set duration filter (e.g., >1000ms)
+3. Identify bottleneck services
+4. Drill down into span details
+
+### Circuit Breaker Monitoring
+
+Gateway uses Resilience4j circuit breakers for resilience:
+
+**Configuration**:
+```yaml
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+        failureRateThreshold: 50
+        waitDurationInOpenState: 10000
+        permittedNumberOfCallsInHalfOpenState: 3
+```
+
+**States**:
+- **CLOSED**: Normal operation
+- **OPEN**: Failures exceeded threshold, requests fail fast
+- **HALF_OPEN**: Testing if service recovered
+
+**Metrics**:
+```bash
+curl http://localhost:8080/actuator/metrics/resilience4j.circuitbreaker.state
+```
+
+### Database Connection Pool
+
+Monitor HikariCP connection pool:
+
+```bash
+curl http://localhost:8081/actuator/metrics/hikaricp.connections.active
+curl http://localhost:8081/actuator/metrics/hikaricp.connections.idle
+```
+
+## Troubleshooting
+
+### No Traces in Zipkin
+
+**Problem**: Services are running but no traces appear in Zipkin
+
+**Solutions**:
+1. Verify Zipkin URL:
+   ```yaml
+   management:
+     zipkin:
+       tracing:
+         endpoint: http://sgivu-zipkin:9411/api/v2/spans
+   ```
+
+2. Check sampling probability:
+   ```yaml
+   management:
+     tracing:
+       sampling:
+         probability: 1.0  # 100% sampling
+   ```
+
+3. Test Zipkin connectivity:
+   ```bash
+   docker compose exec sgivu-gateway curl -X POST http://sgivu-zipkin:9411/api/v2/spans
+   ```
+
+4. Check Zipkin logs:
+   ```bash
+   docker compose logs sgivu-zipkin
+   ```
+
+### Service Not Appearing in Eureka
+
+**Problem**: Service is running but not registered
+
+**Solutions**:
+1. Verify Eureka configuration:
+   ```yaml
+   eureka:
+     client:
+       service-url:
+         defaultZone: http://sgivu-discovery:8761/eureka
+       register-with-eureka: true
+       fetch-registry: true
+   ```
+
+2. Check network connectivity:
+   ```bash
+   docker compose exec sgivu-user curl http://sgivu-discovery:8761
+   ```
+
+3. Review service logs for registration errors:
+   ```bash
+   docker compose logs sgivu-user | grep -i eureka
+   ```
+
+### High Trace Volume
+
+**Problem**: Zipkin database growing rapidly
+
+**Solutions**:
+1. Reduce sampling rate:
+   ```yaml
+   management:
+     tracing:
+       sampling:
+         probability: 0.1  # 10% sampling
+   ```
+
+2. Configure Zipkin retention:
+   ```bash
+   ZIPKIN_STORAGE_MYSQL_MAX_TRACE_AGE=86400000  # 1 day in milliseconds
+   ```
+
+3. Implement trace cleanup:
+   ```sql
+   DELETE FROM zipkin_spans WHERE start_ts < UNIX_TIMESTAMP(NOW() - INTERVAL 7 DAY) * 1000000;
+   ```
+
+## Next Steps
+
+- [Deployment Architecture](/infrastructure/deployment): Infrastructure overview
+- [Docker Compose](/infrastructure/docker-compose): Service orchestration
+- [Nginx Configuration](/infrastructure/nginx): Reverse proxy setup

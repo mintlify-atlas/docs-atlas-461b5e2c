@@ -1,0 +1,283 @@
+---
+title: 'Session Management'
+description: 'Session and authentication state endpoints'
+---
+
+## Overview
+
+Session management endpoints allow frontend applications to check authentication state and retrieve user session information. These endpoints are exposed by the `sgivu-gateway` BFF (Backend-for-Frontend).
+
+## Base URL
+
+```
+https://your-domain.com
+```
+
+---
+
+## Get Session Status
+
+```http
+GET /auth/session
+```
+
+Retrieves the current authenticated user's session information including claims from the JWT token.
+
+**Authentication:** Required - Must be authenticated via OAuth2
+
+**Authorization:** None (any authenticated user)
+
+### Response
+
+<ResponseField name="sub" type="string">
+  Subject identifier (username)
+</ResponseField>
+
+<ResponseField name="name" type="string">
+  Full name of the authenticated user
+</ResponseField>
+
+<ResponseField name="email" type="string">
+  Email address of the authenticated user
+</ResponseField>
+
+<ResponseField name="roles" type="array">
+  Array of role names assigned to the user
+</ResponseField>
+
+<ResponseField name="permissions" type="array">
+  Array of permission strings (e.g., `user:read`, `vehicle:create`)
+</ResponseField>
+
+<ResponseField name="rolesAndPermissions" type="array">
+  Combined array of roles and permissions for authorization checks
+</ResponseField>
+
+<ResponseField name="iat" type="integer">
+  Token issued at timestamp (Unix epoch)
+</ResponseField>
+
+<ResponseField name="exp" type="integer">
+  Token expiration timestamp (Unix epoch)
+</ResponseField>
+
+```json
+{
+  "sub": "steven",
+  "name": "Steven Rodriguez",
+  "email": "steven@example.com",
+  "roles": ["ADMIN"],
+  "permissions": [
+    "user:read",
+    "user:create",
+    "user:update",
+    "user:delete",
+    "vehicle:read",
+    "vehicle:create",
+    "vehicle:update",
+    "vehicle:delete"
+  ],
+  "rolesAndPermissions": [
+    "ROLE_ADMIN",
+    "user:read",
+    "user:create",
+    "user:update",
+    "user:delete",
+    "vehicle:read",
+    "vehicle:create",
+    "vehicle:update",
+    "vehicle:delete"
+  ],
+  "iat": 1709740800,
+  "exp": 1709744400
+}
+```
+
+### Status Codes
+
+- `200 OK` - Session information retrieved successfully
+- `401 Unauthorized` - Not authenticated or token expired
+
+### Example
+
+```bash
+curl -X GET https://your-domain.com/auth/session \
+  -H "Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9..."
+```
+
+---
+
+## Validate Credentials
+
+```http
+POST /api/validate-credentials
+```
+
+Validates user credentials in real-time during the login process. Provides immediate feedback without submitting the complete login form.
+
+**Authentication:** None (used during login flow)
+
+**Content-Type:** `application/json`
+
+### Request Body
+
+<ParamField body="username" type="string" required>
+  Username to validate
+</ParamField>
+
+<ParamField body="password" type="string" required>
+  Password to validate
+</ParamField>
+
+```json
+{
+  "username": "jperez",
+  "password": "SecureP@ss123"
+}
+```
+
+### Response
+
+<ResponseField name="valid" type="boolean">
+  Indicates whether the credentials are valid
+</ResponseField>
+
+<ResponseField name="reason" type="string" nullable>
+  If `valid` is `false`, provides the reason for validation failure. Possible values:
+  - `invalid_credentials` - Username or password is incorrect
+  - `disabled` - User account is disabled
+  - `locked` - User account is locked
+  - `expired` - User account has expired
+  - `credentials` - Credentials have expired
+  - `service_unavailable` - User service is unreachable
+  
+  `null` if `valid` is `true`
+</ResponseField>
+
+#### Success Response
+
+```json
+{
+  "valid": true,
+  "reason": null
+}
+```
+
+#### Failure Response
+
+```json
+{
+  "valid": false,
+  "reason": "invalid_credentials"
+}
+```
+
+### Status Codes
+
+- `200 OK` - Validation completed (check `valid` field for result)
+- `400 Bad Request` - Malformed request or missing required fields
+- `500 Internal Server Error` - Server error during validation
+
+### Example
+
+```bash
+curl -X POST https://your-domain.com/api/validate-credentials \
+  -H "Content-Type: application/json" \
+  -d '{
+    "username": "jperez",
+    "password": "SecureP@ss123"
+  }'
+```
+
+---
+
+## Logout
+
+```http
+GET /logout
+```
+
+Invalidates the current user session and clears authentication cookies.
+
+**Authentication:** Optional (works with or without authentication)
+
+### Response
+
+Redirects to the login page or application home page.
+
+```
+HTTP/1.1 302 Found
+Location: /login
+```
+
+### Example
+
+```bash
+curl -X GET https://your-domain.com/logout \
+  -H "Cookie: SESSION=..."
+```
+
+---
+
+## Session Storage
+
+SGIVU uses Spring Session with JDBC for session persistence:
+
+- Sessions are stored in PostgreSQL (`SPRING_SESSION` tables)
+- Sessions survive application restarts
+- Supports distributed deployments with session sharing
+
+### Session Configuration
+
+- **Session timeout**: Configurable via Spring Session settings
+- **Cookie name**: `SESSION`
+- **Cookie attributes**: HttpOnly, Secure (in production), SameSite=Lax
+
+---
+
+## Security Notes
+
+### Internal Service Authentication
+
+The credentials validation endpoint uses the `X-Internal-Service-Key` header for communication between `sgivu-auth` and `sgivu-user`:
+
+<Warning>
+  Never expose the internal service key publicly. This key should only be used for service-to-service communication.
+</Warning>
+
+### JWT Claims
+
+The session endpoint exposes claims from the JWT token including:
+
+- **Standard claims**: `sub`, `iat`, `exp`, `iss`, `aud`
+- **Custom claims**: `rolesAndPermissions` - used for authorization
+
+### Authorization Headers
+
+The gateway propagates user information to downstream services via headers:
+
+- `X-User-ID`: User ID from the token
+- `X-Username`: Username from the token
+- `Authorization`: Bearer token for resource server validation
+
+---
+
+## Error Responses
+
+### 401 Unauthorized
+
+```json
+{
+  "error": "unauthorized",
+  "message": "Full authentication is required to access this resource"
+}
+```
+
+### 500 Internal Server Error
+
+```json
+{
+  "error": "internal_error",
+  "message": "An unexpected error occurred during validation"
+}
+```

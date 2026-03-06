@@ -1,0 +1,217 @@
+---
+title: Vehicle Management
+description: Manage your vehicle inventory with detailed information and images
+---
+
+## Overview
+
+Vehicle Management is the core of SGIVU's inventory system, allowing you to catalog cars and motorcycles, track availability status, and manage vehicle images. Whether you're adding new inventory or updating existing vehicles, this module provides comprehensive tools for vehicle data management.
+
+## Managing Vehicles
+
+### Adding a New Vehicle
+
+<Steps>
+  <Step title="Access Vehicle Management">
+    Navigate to the Vehicle Management section from your dashboard. You need the `vehicle:create` permission to add new vehicles.
+  </Step>
+  
+  <Step title="Enter Vehicle Details">
+    Fill in the vehicle information:
+    - **Make and Model**: Manufacturer and specific model name
+    - **Year**: Manufacturing year
+    - **VIN**: Vehicle Identification Number (unique identifier)
+    - **Type**: Car or Motorcycle
+    - **Color**: Exterior color
+    - **Mileage**: Current odometer reading
+    - **Price**: Asking or sale price
+    - **Description**: Detailed description of features and condition
+  </Step>
+  
+  <Step title="Set Availability Status">
+    Choose the vehicle's current status:
+    - **Available**: Ready for sale
+    - **Unavailable**: Reserved, in maintenance, or otherwise not for sale
+  </Step>
+  
+  <Step title="Add Vehicle Images">
+    Upload photos of the vehicle. See the Image Management section below for detailed steps.
+  </Step>
+  
+  <Step title="Save Vehicle">
+    Review all information and save the vehicle to your inventory. The vehicle is now searchable and available for transactions.
+  </Step>
+</Steps>
+
+### Updating Vehicle Information
+
+<Card title="Edit Vehicle Details" icon="pen-to-square">
+  You can update any vehicle information at any time by searching for the vehicle and selecting edit. Common updates include price changes, status updates, and condition descriptions.
+</Card>
+
+### Searching for Vehicles
+
+SGIVU offers advanced search capabilities to quickly find vehicles in your inventory:
+
+<CardGroup cols={2}>
+  <Card title="By VIN" icon="barcode">
+    Search using the unique Vehicle Identification Number for exact matches.
+  </Card>
+  
+  <Card title="By Make and Model" icon="car">
+    Filter by manufacturer and model name to browse specific vehicle types.
+  </Card>
+  
+  <Card title="By Status" icon="circle-check">
+    View only available or unavailable vehicles.
+  </Card>
+  
+  <Card title="Advanced Filters" icon="filter">
+    Combine multiple criteria like year range, price range, mileage, and vehicle type for precise results.
+  </Card>
+</CardGroup>
+
+## Image Management
+
+Vehicle photos are essential for showcasing your inventory. SGIVU uses cloud storage to efficiently manage high-quality vehicle images.
+
+### Uploading Vehicle Photos
+
+<Steps>
+  <Step title="Request Upload">
+    From the vehicle detail page, select "Add Images". The system will prepare a secure upload link.
+  </Step>
+  
+  <Step title="Select Photos">
+    Choose one or more photos from your device. Supported formats:
+    - JPEG (.jpg, .jpeg)
+    - PNG (.png)
+    - WebP (.webp)
+  </Step>
+  
+  <Step title="Upload to Cloud">
+    Your images are uploaded directly to secure cloud storage. This ensures fast loading and reliable access.
+  </Step>
+  
+  <Step title="Confirm Upload">
+    Once uploaded, the system registers the images and associates them with your vehicle. Images appear immediately in the vehicle gallery.
+  </Step>
+</Steps>
+
+### Managing Vehicle Images
+
+<Card title="Primary Image" icon="star">
+  The first image you upload automatically becomes the primary image for the vehicle. This is the main photo displayed in listings and search results.
+</Card>
+
+<Card title="Reordering Images" icon="arrows-up-down">
+  When you delete the primary image, the system automatically promotes the next oldest image to primary status, ensuring your vehicle always has a main photo.
+</Card>
+
+<Card title="Deleting Images" icon="trash">
+  You can remove individual images at any time. Deleted images are permanently removed from cloud storage.
+</Card>
+
+### Image Best Practices
+
+<CardGroup cols={2}>
+  <Card title="High Quality" icon="image">
+    Use clear, well-lit photos that showcase vehicle details and condition.
+  </Card>
+  
+  <Card title="Multiple Angles" icon="camera-rotate">
+    Include photos from all angles: front, rear, sides, and interior.
+  </Card>
+  
+  <Card title="Detail Shots" icon="magnifying-glass-plus">
+    Add close-up images of special features, upgrades, or any damage.
+  </Card>
+  
+  <Card title="Consistent Lighting" icon="sun">
+    Take photos in good lighting conditions for accurate color representation.
+  </Card>
+</CardGroup>
+
+## Vehicle Status Management
+
+### Available Status
+
+Vehicles marked as "Available" are:
+- Visible in customer-facing catalogs
+- Available for purchase/sale contracts
+- Included in inventory reports
+- Featured in demand predictions
+
+### Unavailable Status
+
+Mark vehicles as "Unavailable" when they are:
+- Reserved for a specific customer
+- Under maintenance or repair
+- Pending paperwork completion
+- Temporarily removed from sale
+
+<Card title="Status Changes" icon="toggle-on">
+  You can toggle vehicle status at any time. Status changes take effect immediately across the platform.
+</Card>
+
+## Vehicle Types
+
+SGIVU supports two main vehicle categories:
+
+<CardGroup cols={2}>
+  <Card title="Cars" icon="car-side">
+    Automobiles including sedans, SUVs, trucks, and vans. Track standard automotive specifications.
+  </Card>
+  
+  <Card title="Motorcycles" icon="motorcycle">
+    Two-wheeled vehicles with specialized fields for motorcycle-specific details.
+  </Card>
+</CardGroup>
+
+## Integration with Other Features
+
+### Purchase/Sale Contracts
+
+Vehicles in your inventory can be selected when creating purchase or sale contracts. The system automatically updates vehicle status based on contract state.
+
+### Demand Prediction
+
+Vehicle data feeds into SGIVU's machine learning system to predict demand by vehicle segment, helping you optimize inventory.
+
+### Client Management
+
+Link vehicles to clients through contracts, creating a complete transaction history for each vehicle.
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Image upload fails">
+    Ensure your image is in a supported format (JPEG, PNG, or WebP). Check your internet connection and try again. Very large files may need to be compressed before upload.
+  </Accordion>
+  
+  <Accordion title="Cannot change vehicle status">
+    Verify you have the `vehicle:update` permission. If the vehicle is part of an active contract, you may need to resolve the contract first.
+  </Accordion>
+  
+  <Accordion title="Search returns no results">
+    Check your filter settings and search terms. Ensure the vehicles you're looking for match your search criteria.
+  </Accordion>
+  
+  <Accordion title="CORS errors when uploading images">
+    This is a configuration issue. Contact your system administrator to verify cloud storage CORS settings.
+  </Accordion>
+  
+  <Accordion title="Primary image not updating">
+    Try refreshing the page. If the issue persists, the image may not have finished uploading or confirming.
+  </Accordion>
+</AccordionGroup>
+
+## Security and Privacy
+
+<Card title="Secure Storage" icon="cloud-arrow-up">
+  All vehicle images are stored in secure cloud storage with restricted access. Upload URLs are time-limited and single-use for maximum security.
+</Card>
+
+<Card title="Permission-Based Access" icon="lock">
+  Only users with appropriate permissions can view, create, modify, or delete vehicles. All actions are logged for audit purposes.
+</Card>

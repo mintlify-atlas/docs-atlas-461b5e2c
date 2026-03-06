@@ -1,0 +1,420 @@
+---
+title: 'Model Retraining'
+description: 'Trigger model retraining with fresh data'
+---
+
+## Overview
+
+The Model Retraining API allows authorized users to trigger retraining of the demand prediction model with updated transaction data. This endpoint fetches the latest purchase and sales data, trains a new model, and deploys it for predictions.
+
+## Base URL
+
+```
+https://your-domain.com/v1/ml
+```
+
+---
+
+## Retrain Model
+
+```http
+POST /v1/ml/retrain
+```
+
+Triggers a model retraining operation using fresh transaction data.
+
+**Authentication:** Required (JWT or internal service key)
+
+**Authorization:** Configurable permissions (typically requires admin role)
+
+<Warning>
+  Model retraining is a resource-intensive operation that may take several minutes. Use with caution and avoid triggering multiple concurrent retraining jobs.
+</Warning>
+
+### Request Body
+
+<ParamField body="start_date" type="string" format="date">
+  Start date for training data (ISO 8601: YYYY-MM-DD). Optional - defaults to earliest available data.
+</ParamField>
+
+<ParamField body="end_date" type="string" format="date">
+  End date for training data (ISO 8601: YYYY-MM-DD). Optional - defaults to most recent data.
+</ParamField>
+
+```json
+{
+  "start_date": "2024-01-01",
+  "end_date": "2026-03-01"
+}
+```
+
+<Note>
+  If both `start_date` and `end_date` are omitted, the model will train on all available historical data.
+</Note>
+
+### Response
+
+<ResponseField name="version" type="string">
+  Version identifier of the newly trained model
+</ResponseField>
+
+<ResponseField name="metrics" type="object">
+  Model performance metrics on test set
+</ResponseField>
+
+<ResponseField name="metrics.mae" type="number">
+  Mean Absolute Error
+</ResponseField>
+
+<ResponseField name="metrics.rmse" type="number">
+  Root Mean Square Error
+</ResponseField>
+
+<ResponseField name="metrics.mape" type="number">
+  Mean Absolute Percentage Error
+</ResponseField>
+
+<ResponseField name="metrics.r2" type="number">
+  R-squared (coefficient of determination)
+</ResponseField>
+
+<ResponseField name="trained_at" type="string">
+  Training completion timestamp (ISO 8601)
+</ResponseField>
+
+<ResponseField name="samples" type="object">
+  Dataset split information
+</ResponseField>
+
+<ResponseField name="samples.train" type="integer">
+  Number of training samples
+</ResponseField>
+
+<ResponseField name="samples.test" type="integer">
+  Number of test samples
+</ResponseField>
+
+<ResponseField name="samples.total" type="integer">
+  Total number of samples
+</ResponseField>
+
+```json
+{
+  "version": "v1.3.0-20260306",
+  "metrics": {
+    "mae": 1.32,
+    "rmse": 1.95,
+    "mape": 0.14,
+    "r2": 0.87
+  },
+  "trained_at": "2026-03-06T14:35:22Z",
+  "samples": {
+    "train": 8540,
+    "test": 2135,
+    "total": 10675
+  }
+}
+```
+
+### Status Codes
+
+- `200 OK` - Model retrained successfully
+- `400 Bad Request` - Invalid date range or parameters
+- `401 Unauthorized` - Missing or invalid authentication
+- `403 Forbidden` - Insufficient permissions
+- `500 Internal Server Error` - Training failed
+
+### Example
+
+```bash
+# Retrain with all available data
+curl -X POST https://your-domain.com/v1/ml/retrain \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# Retrain with specific date range
+curl -X POST https://your-domain.com/v1/ml/retrain \
+  -H "Authorization: Bearer YOUR_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_date": "2024-01-01",
+    "end_date": "2026-03-01"
+  }'
+```
+
+---
+
+## Retraining Process
+
+The retraining pipeline follows these steps:
+
+### 1. Data Extraction
+
+- Fetches purchase and sales transactions from `sgivu-purchase-sale` service
+- Filters by date range if specified
+- Aggregates sales by vehicle segment (brand, model, line) and month
+
+### 2. Feature Engineering
+
+- Creates time series features (month, year, seasonality)
+- Computes segment-level statistics
+- Generates lag features and rolling aggregates
+
+### 3. Model Training
+
+- Splits data into training (80%) and test (20%) sets
+- Trains time series forecasting model (typically ARIMA, Prophet, or ML-based)
+- Validates on test set
+
+### 4. Model Evaluation
+
+- Calculates performance metrics (MAE, RMSE, MAPE, R²)
+- Compares against previous model if available
+
+### 5. Model Deployment
+
+- Persists model artifacts using `joblib`
+- Optionally saves to PostgreSQL
+- Updates model metadata
+- Activates as the current production model
+
+---
+
+## Model Versioning
+
+Each trained model is assigned a version identifier:
+
+**Format:** `v{major}.{minor}.{patch}-{timestamp}`
+
+**Example:** `v1.3.0-20260306`
+
+- **major.minor.patch** - Semantic version based on algorithm changes
+- **timestamp** - Training date in YYYYMMDD format
+
+### Version Management
+
+- New models automatically become the active model for predictions
+- Previous model versions are retained for rollback if needed
+- Model artifacts can be stored in both filesystem and database
+
+---
+
+## Training Data Requirements
+
+### Minimum Data Volume
+
+For reliable models, ensure:
+
+- **Time range:** At least 12 months of historical data
+- **Segment coverage:** Multiple vehicle segments with sufficient transactions
+- **Sample size:** Minimum 100 transactions per segment recommended
+
+### Data Quality
+
+- Missing or null values are handled automatically
+- Outliers are detected and may be excluded
+- Segments with insufficient data are skipped
+
+<Warning>
+  Training on insufficient data may result in poor model performance. The API will return an error if the dataset is too small.
+</Warning>
+
+---
+
+## Performance Metrics Explained
+
+### Mean Absolute Error (MAE)
+
+Average absolute difference between predicted and actual sales.
+
+- **Units:** Same as target variable (number of vehicles)
+- **Lower is better**
+- **Example:** MAE of 1.32 means predictions are off by ~1-2 vehicles on average
+
+### Root Mean Square Error (RMSE)
+
+Square root of average squared errors. Penalizes large errors more heavily.
+
+- **Units:** Same as target variable
+- **Lower is better**
+- **Typical range:** Slightly higher than MAE
+
+### Mean Absolute Percentage Error (MAPE)
+
+Average percentage error relative to actual values.
+
+- **Units:** Percentage (0-1)
+- **Lower is better**
+- **Example:** MAPE of 0.14 means 14% average error
+
+### R-squared (R²)
+
+Proportion of variance explained by the model.
+
+- **Range:** 0-1 (can be negative for poor models)
+- **Higher is better**
+- **Example:** R² of 0.87 means model explains 87% of variance
+
+### Interpreting Metrics
+
+**Good Model:**
+- MAE < 2.0
+- RMSE < 3.0
+- MAPE < 0.20 (20%)
+- R² > 0.75
+
+**Excellent Model:**
+- MAE < 1.0
+- RMSE < 1.5
+- MAPE < 0.10 (10%)
+- R² > 0.90
+
+---
+
+## Best Practices
+
+### Retraining Frequency
+
+**Recommended schedule:**
+
+- **Weekly:** For high-volume dealerships with frequent transactions
+- **Monthly:** For moderate-volume operations
+- **Quarterly:** For low-volume or stable markets
+
+### When to Retrain
+
+Trigger retraining when:
+
+- New transaction data is available
+- Model performance degrades (predictions become less accurate)
+- Significant market changes occur (seasonality, economic shifts)
+- New vehicle models are introduced
+
+### Monitoring Model Performance
+
+Track these indicators:
+
+- Prediction accuracy on recent data
+- Residual analysis (actual vs. predicted)
+- Metric trends over time
+- Coverage (percentage of segments with predictions)
+
+---
+
+## Retraining Schedule
+
+You can automate retraining using cron jobs or scheduled tasks:
+
+### Example: Weekly Cron Job
+
+```bash
+# Retrain every Monday at 2 AM
+0 2 * * 1 curl -X POST https://your-domain.com/v1/ml/retrain \
+  -H "X-Internal-Service-Key: $INTERNAL_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+### Example: Python Scheduled Task
+
+```python
+import requests
+import schedule
+import time
+
+def retrain_model():
+    response = requests.post(
+        "https://your-domain.com/v1/ml/retrain",
+        headers={
+            "X-Internal-Service-Key": "YOUR_KEY",
+            "Content-Type": "application/json"
+        },
+        json={}
+    )
+    print(f"Retraining status: {response.status_code}")
+    print(response.json())
+
+# Schedule weekly retraining
+schedule.every().monday.at("02:00").do(retrain_model)
+
+while True:
+    schedule.run_pending()
+    time.sleep(3600)
+```
+
+---
+
+## Error Responses
+
+### 400 Bad Request - Invalid Date Range
+
+```json
+{
+  "detail": "end_date must be after start_date"
+}
+```
+
+### 400 Bad Request - Insufficient Data
+
+```json
+{
+  "detail": "Insufficient training data. Minimum 12 months of transaction history required."
+}
+```
+
+### 403 Forbidden
+
+```json
+{
+  "detail": "User does not have required permission: ml:retrain"
+}
+```
+
+### 500 Internal Server Error - Training Failed
+
+```json
+{
+  "detail": "Model training failed: convergence error. Check data quality and try again."
+}
+```
+
+---
+
+## Storage and Persistence
+
+### Model Artifacts
+
+Trained models are persisted using `joblib`:
+
+- **Location:** Configured via `MODEL_DIR` environment variable
+- **Format:** Pickled scikit-learn/XGBoost models
+- **Naming:** `model_{version}.pkl`
+
+### Database Persistence
+
+Optionally, model metadata and artifacts can be stored in PostgreSQL:
+
+- **Table:** `ml_model_artifacts`
+- **Fields:** version, metrics, trained_at, artifact_data (binary)
+
+### Feature Snapshots
+
+Training features can be saved for reproducibility:
+
+- **Table:** `ml_training_features`
+- **Purpose:** Audit, debugging, retraining experiments
+
+---
+
+## Rollback and Model Management
+
+If a newly trained model performs poorly:
+
+1. **Manual Rollback:** Replace current model file with previous version
+2. **Database Rollback:** Update active model pointer in database
+3. **Verify:** Test predictions with `/predict` endpoint
+
+<Note>
+  Future versions will include an API endpoint for automated model rollback.
+</Note>

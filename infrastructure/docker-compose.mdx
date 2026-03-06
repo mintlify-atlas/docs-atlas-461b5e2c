@@ -1,0 +1,813 @@
+---
+title: Docker Compose Configuration
+description: Complete reference for SGIVU Docker Compose orchestration and service definitions
+---
+
+## Overview
+
+SGIVU uses Docker Compose to orchestrate all microservices, databases, and supporting infrastructure. The compose setup is located in `infra/compose/sgivu-docker-compose/` and provides both development and production configurations.
+
+## Compose Files
+
+### docker-compose.dev.yml
+
+Development configuration with:
+- All services with exposed ports for direct access
+- Native profile for Config Server (loads from local filesystem)
+- Volume mount for config repository: `../../../../sgivu-config-repo:/config-repo`
+- Uses `.env.dev` environment file
+
+### docker-compose.yml
+
+Production configuration with:
+- Minimal port exposure (only Gateway:8080 and Auth:9000)
+- Git profile for Config Server (loads from GitHub repository)
+- Uses `.env` environment file
+- `extra_hosts` configuration to resolve EC2 hostname internally
+
+## Quick Start
+
+### Development Stack
+
+```bash
+cd infra/compose/sgivu-docker-compose
+cp .env.dev.example .env.dev
+# Edit .env.dev with your values
+./run.bash --dev
+```
+
+### Production Stack
+
+```bash
+cd infra/compose/sgivu-docker-compose
+cp .env.example .env
+# Edit .env with production values
+./run.bash --prod
+```
+
+### Stop Stack
+
+```bash
+docker compose down
+
+# Remove volumes (WARNING: deletes all data)
+docker compose down -v
+```
+
+## Service Definitions
+
+### Infrastructure Services
+
+#### sgivu-postgres
+
+```yaml
+sgivu-postgres:
+  container_name: sgivu-postgres
+  image: postgres:16
+  ports:
+    - "5432:5432"  # Dev only
+  restart: always
+  env_file: .env
+  networks:
+    - sgivu-network
+  volumes:
+    - postgres-data:/var/lib/postgresql/data
+```
+
+**Purpose**: Shared PostgreSQL instance hosting all service databases
+
+**Databases**:
+- `sgivu_auth_db`: OAuth2 clients, authorizations, consent
+- `sgivu_user_db`: Users, roles, permissions
+- `sgivu_client_db`: Customer/client management
+- `sgivu_vehicle_db`: Vehicle inventory
+- `sgivu_purchase_sale_db`: Transaction records
+- `sgivu_ml_db`: ML model artifacts and predictions
+
+**Environment Variables**:
+- `POSTGRES_HOST=sgivu-postgres`
+- `POSTGRES_DB=postgres`
+- `POSTGRES_USER=postgres`
+- `POSTGRES_PASSWORD=<your-password>`
+
+#### sgivu-mysql
+
+```yaml
+sgivu-mysql:
+  container_name: sgivu-mysql
+  image: mysql:8
+  command: --mysql-native-password=ON
+  ports:
+    - "3306:3306"  # Dev only
+  restart: always
+  env_file: .env
+  networks:
+    - sgivu-network
+  volumes:
+    - mysql-data:/var/lib/mysql
+    - ./mysql-init:/docker-entrypoint-initdb.d
+```
+
+**Purpose**: MySQL instance used **exclusively** by Zipkin for trace storage
+
+**Environment Variables**:
+- `MYSQL_HOST=sgivu-mysql`
+- `MYSQL_ROOT_PASSWORD=<your-password>`
+- `MYSQL_DATABASE=sgivu_zipkin_db`
+- `MYSQL_USER=zipkin`
+- `MYSQL_PASSWORD=<your-password>`
+
+<Info>
+  MySQL is not used by any business services. All application data is stored in PostgreSQL.
+</Info>
+
+#### sgivu-redis
+
+```yaml
+sgivu-redis:
+  container_name: sgivu-redis
+  image: redis:7
+  ports:
+    - "6379:6379"  # Dev only
+  command: >
+    sh -c "redis-server --requirepass \"$REDIS_PASSWORD\""
+  env_file: .env
+  restart: always
+  networks:
+    - sgivu-network
+  volumes:
+    - redis-data:/data
+```
+
+**Purpose**: Session storage for Gateway's BFF pattern
+
+**Usage**: `sgivu-gateway` stores HTTP sessions containing OAuth2 tokens in Redis, enabling horizontal scaling while maintaining session state.
+
+**Configuration**:
+- Session namespace: `spring:session:sgivu-gateway`
+- Store type: `spring.session.store-type=redis`
+- Dependencies: `spring-session-data-redis`, `spring-boot-starter-data-redis-reactive`
+
+**Environment Variables**:
+- `REDIS_HOST=sgivu-redis`
+- `REDIS_PORT=6379`
+- `REDIS_PASSWORD=<your-password>` (must match in both container and Gateway config)
+
+<Warning>
+  Redis is used **only** by sgivu-gateway for session persistence. It is not used for rate limiting, caching, or direct RedisTemplate operations.
+</Warning>
+
+### Core Services
+
+#### sgivu-config
+
+```yaml
+sgivu-config:
+  container_name: sgivu-config
+  image: stevenrq/sgivu-config:v1
+  ports:
+    - "8888:8888"  # Dev only
+  restart: always
+  networks:
+    - sgivu-network
+  environment:
+    - SPRING_PROFILES_ACTIVE=git  # or 'native' for dev
+    - SPRING_CLOUD_CONFIG_SERVER_GIT_URI=https://github.com/stevenrq/sgivu-config-repo.git
+    - SPRING_CLOUD_CONFIG_SERVER_GIT_DEFAULT_LABEL=main
+```
+
+**Purpose**: Centralized configuration server for all microservices
+
+**Profiles**:
+- **native**: Loads configuration from local filesystem (development)
+- **git**: Loads configuration from GitHub repository (production)
+
+**Endpoints**:
+- `GET /{service}/{profile}`: Retrieve configuration for a service
+- Example: `http://sgivu-config:8888/sgivu-gateway/dev`
+
+**Configuration Repository**: [sgivu-config-repo](https://github.com/stevenrq/sgivu-config-repo)
+
+#### sgivu-discovery
+
+```yaml
+sgivu-discovery:
+  container_name: sgivu-discovery
+  image: stevenrq/sgivu-discovery:v1
+  ports:
+    - "8761:8761"
+  restart: always
+  networks:
+    - sgivu-network
+  env_file: .env
+```
+
+**Purpose**: Eureka service registry for service discovery
+
+**Endpoints**:
+- `GET /eureka/apps`: List all registered services
+- Web UI: `http://sgivu-discovery:8761`
+
+**Configuration**:
+- All services configure `eureka.client.service-url.defaultZone=http://sgivu-discovery:8761/eureka`
+- Gateway uses `lb://service-name` for load-balanced routing
+
+#### sgivu-zipkin
+
+```yaml
+sgivu-zipkin:
+  container_name: sgivu-zipkin
+  image: openzipkin/zipkin
+  ports:
+    - "9411:9411"
+  restart: always
+  networks:
+    - sgivu-network
+  env_file: .env
+  depends_on:
+    - sgivu-mysql
+```
+
+**Purpose**: Distributed tracing system for request correlation
+
+**Storage**: MySQL (`sgivu_zipkin_db`)
+
+**Environment Variables**:
+- `STORAGE_TYPE=mysql`
+- `MYSQL_HOST=sgivu-mysql`
+- `MYSQL_DB=sgivu_zipkin_db`
+- `MYSQL_USER=zipkin`
+- `MYSQL_PASS=<your-password>`
+
+**Web UI**: `http://localhost:9411`
+
+<Warning>
+  Zipkin UI is exposed without authentication. In production, restrict access via IP whitelist or VPN.
+</Warning>
+
+### Business Services
+
+#### sgivu-auth
+
+```yaml
+sgivu-auth:
+  container_name: sgivu-auth
+  image: stevenrq/sgivu-auth:v1
+  ports:
+    - "9000:9000"
+  restart: always
+  networks:
+    - sgivu-network
+  env_file: .env
+  depends_on:
+    - sgivu-postgres
+    - sgivu-config
+    - sgivu-discovery
+```
+
+**Purpose**: OAuth 2.1 / OpenID Connect Authorization Server
+
+**Key Features**:
+- JWT issuance with RSA signing (keystore.jks)
+- OAuth2 client registration
+- User authentication via sgivu-user service
+- Spring Session JDBC for authorization consent
+
+**Endpoints**:
+- `/.well-known/openid-configuration`: OIDC discovery
+- `/oauth2/authorize`: Authorization endpoint
+- `/oauth2/token`: Token endpoint
+- `/oauth2/jwks`: JSON Web Key Set
+- `/login`: Login page
+- `/actuator/health`: Health check
+
+**Database**: `sgivu_auth_db` (PostgreSQL)
+
+**Critical Environment Variables**:
+- `ISSUER_URL`: Must match JWT `iss` claim
+- `JWT_KEYSTORE_LOCATION=classpath:keystore.jks`
+- `JWT_KEYSTORE_PASSWORD`
+- `JWT_KEY_ALIAS=sgivu-jwt`
+- `JWT_KEY_PASSWORD`
+- `SGIVU_GATEWAY_SECRET`: OAuth2 client secret (BCrypt hashed in DB)
+
+#### sgivu-gateway
+
+```yaml
+sgivu-gateway:
+  container_name: sgivu-gateway
+  image: stevenrq/sgivu-gateway:v1
+  ports:
+    - "8080:8080"
+  restart: always
+  networks:
+    - sgivu-network
+  env_file: .env
+  extra_hosts:  # Production only
+    - "ec2-98-86-100-220.compute-1.amazonaws.com:host-gateway"
+  depends_on:
+    - sgivu-config
+    - sgivu-discovery
+    - sgivu-auth
+    - sgivu-redis
+```
+
+**Purpose**: API Gateway and Backend For Frontend (BFF)
+
+**Key Features**:
+- OAuth2 Client (authorization_code + PKCE)
+- Token relay to downstream services
+- Circuit breaker with Resilience4j
+- Session management (Redis-backed)
+- Route rewriting for Swagger UI
+
+**Endpoints**:
+- `/auth/session`: Session info for SPA
+- `/v1/*`: Business APIs (routes to microservices)
+- `/docs/{service}/*`: Swagger UI proxy
+- `/actuator/health`: Health check
+
+**Routes** (see `GatewayRoutesConfig.java`):
+- `/v1/users/**` → `lb://sgivu-user`
+- `/v1/persons/**` → `lb://sgivu-user`
+- `/v1/clients/**` → `lb://sgivu-client`
+- `/v1/vehicles/**` → `lb://sgivu-vehicle`
+- `/v1/purchase-sales/**` → `lb://sgivu-purchase-sale`
+- `/v1/ml/**` → `http://sgivu-ml:8000`
+
+**Extra Hosts**: In production, maps EC2 hostname to host gateway so Gateway can reach Auth Server via Nginx
+
+#### sgivu-user
+
+```yaml
+sgivu-user:
+  container_name: sgivu-user
+  image: stevenrq/sgivu-user:v1
+  ports:
+    - "8081:8081"  # Dev only
+  restart: always
+  networks:
+    - sgivu-network
+  env_file: .env
+  extra_hosts:  # Production only
+    - "ec2-98-86-100-220.compute-1.amazonaws.com:host-gateway"
+  depends_on:
+    - sgivu-postgres
+    - sgivu-config
+    - sgivu-discovery
+    - sgivu-auth
+```
+
+**Purpose**: User, role, and permission management
+
+**Features**:
+- User CRUD with person associations
+- Role and permission management
+- Internal endpoint for Auth Server credential validation
+
+**Endpoints**:
+- `GET /api/v1/users`: List users
+- `POST /api/v1/users`: Create user
+- `GET /api/v1/internal/users/by-username/{username}`: Internal (requires `X-Internal-Service-Key`)
+- `/actuator/health`: Health check
+
+**Database**: `sgivu_user_db` (PostgreSQL)
+
+**Migrations**: `V1__initial_schema.sql`, seed data in `R__seed_data.sql` (creates `steven` admin user)
+
+#### sgivu-client
+
+```yaml
+sgivu-client:
+  container_name: sgivu-client
+  image: stevenrq/sgivu-client:v1
+  ports:
+    - "8082:8082"  # Dev only
+  restart: always
+  networks:
+    - sgivu-network
+  env_file: .env
+  extra_hosts:  # Production only
+    - "ec2-98-86-100-220.compute-1.amazonaws.com:host-gateway"
+  depends_on:
+    - sgivu-postgres
+    - sgivu-config
+    - sgivu-discovery
+    - sgivu-auth
+```
+
+**Purpose**: Customer/client management (persons and companies)
+
+**Features**:
+- Person and company CRUD
+- Address management
+- Multi-criteria search
+
+**Endpoints**:
+- `GET /api/v1/clients/persons`: List person clients
+- `GET /api/v1/clients/companies`: List company clients
+- `/actuator/health`: Health check
+
+**Database**: `sgivu_client_db` (PostgreSQL)
+
+#### sgivu-vehicle
+
+```yaml
+sgivu-vehicle:
+  container_name: sgivu-vehicle
+  image: stevenrq/sgivu-vehicle:v1
+  ports:
+    - "8083:8083"  # Dev only
+  restart: always
+  networks:
+    - sgivu-network
+  env_file: .env
+  extra_hosts:  # Production only
+    - "ec2-98-86-100-220.compute-1.amazonaws.com:host-gateway"
+  depends_on:
+    - sgivu-postgres
+    - sgivu-config
+    - sgivu-discovery
+    - sgivu-auth
+```
+
+**Purpose**: Vehicle inventory management
+
+**Features**:
+- Vehicle CRUD (make, model, year, VIN, etc.)
+- Image upload to S3
+- Pre-signed URL generation for image access
+- Vehicle status tracking
+
+**Endpoints**:
+- `GET /api/v1/vehicles`: List vehicles
+- `POST /api/v1/vehicles`: Create vehicle
+- `POST /api/v1/vehicles/{id}/images`: Upload images
+- `/actuator/health`: Health check
+
+**Database**: `sgivu_vehicle_db` (PostgreSQL)
+
+**AWS Integration**:
+- S3 bucket: `AWS_VEHICLES_BUCKET=sgivu-vehicle-images`
+- Region: `AWS_REGION=us-east-1`
+- CORS: `AWS_S3_ALLOWED_ORIGINS`
+
+#### sgivu-purchase-sale
+
+```yaml
+sgivu-purchase-sale:
+  container_name: sgivu-purchase-sale
+  image: stevenrq/sgivu-purchase-sale:v1
+  ports:
+    - "8084:8084"  # Dev only
+  restart: always
+  networks:
+    - sgivu-network
+  env_file: .env
+  extra_hosts:  # Production only
+    - "ec2-98-86-100-220.compute-1.amazonaws.com:host-gateway"
+  depends_on:
+    - sgivu-postgres
+    - sgivu-config
+    - sgivu-discovery
+    - sgivu-auth
+```
+
+**Purpose**: Vehicle purchase and sale transaction management
+
+**Features**:
+- Purchase contract creation
+- Sale contract creation
+- Transaction history
+- Integration with vehicle and client services
+
+**Endpoints**:
+- `GET /api/v1/purchase-sales`: List transactions
+- `POST /api/v1/purchase-sales/purchases`: Create purchase
+- `POST /api/v1/purchase-sales/sales`: Create sale
+- `/actuator/health`: Health check
+
+**Database**: `sgivu_purchase_sale_db` (PostgreSQL)
+
+#### sgivu-ml
+
+```yaml
+sgivu-ml:
+  container_name: sgivu-ml
+  image: stevenrq/sgivu-ml:v1
+  ports:
+    - "8000:8000"  # Dev only
+  restart: always
+  networks:
+    - sgivu-network
+  env_file: .env
+  extra_hosts:  # Production only
+    - "ec2-98-86-100-220.compute-1.amazonaws.com:host-gateway"
+  depends_on:
+    - sgivu-postgres
+    - sgivu-auth
+    - sgivu-client
+    - sgivu-gateway
+    - sgivu-user
+    - sgivu-vehicle
+    - sgivu-purchase-sale
+```
+
+**Purpose**: Machine learning service for demand forecasting
+
+**Technology**: FastAPI + Uvicorn, scikit-learn, pandas
+
+**Features**:
+- Demand prediction by vehicle segment
+- Model retraining with historical data
+- Model metadata and versioning
+- JWT validation via OIDC
+
+**Endpoints**:
+- `POST /v1/ml/predict`: Generate prediction
+- `POST /v1/ml/predict-with-history`: Prediction with historical context
+- `POST /v1/ml/retrain`: Trigger model retraining
+- `GET /v1/ml/models/latest`: Model metadata
+- `GET /health` or `/actuator/health`: Health check
+- `GET /docs`: FastAPI OpenAPI docs
+
+**Database**: `sgivu_ml_db` (PostgreSQL)
+
+**Configuration** (Pydantic Settings):
+- `ENVIRONMENT=prod`
+- `SGIVU_AUTH_DISCOVERY_URL=http://sgivu-auth:9000/.well-known/openid-configuration`
+- `MODEL_DIR=models`
+- `MODEL_NAME=demand_forecaster`
+- `REQUEST_TIMEOUT_SECONDS=15`
+
+## Environment Variables
+
+### Master Reference
+
+See `infra/compose/sgivu-docker-compose/ENV-REFERENCE.md` for complete documentation.
+
+### Critical Variables
+
+#### Profile Selection
+
+```bash
+SPRING_PROFILES_ACTIVE=prod  # or 'dev'
+```
+
+Selects `{service}-prod.yml` or `{service}-dev.yml` from Config Server.
+
+#### JWT Configuration
+
+```bash
+# MUST BE IDENTICAL
+ISSUER_URL=http://your-ec2-hostname
+SGIVU_AUTH_URL=http://your-ec2-hostname
+
+# JWT Signing
+JWT_KEYSTORE_LOCATION=classpath:keystore.jks
+JWT_KEYSTORE_PASSWORD=<your-keystore-password>
+JWT_KEY_ALIAS=sgivu-jwt
+JWT_KEY_PASSWORD=<your-key-password>
+```
+
+<Warning>
+  If `ISSUER_URL` and `SGIVU_AUTH_URL` differ, all JWT validation fails → complete authentication failure.
+</Warning>
+
+#### OAuth2 Client Secret
+
+```bash
+SGIVU_GATEWAY_SECRET=<your-gateway-secret>
+```
+
+Stored BCrypt-hashed in `sgivu_auth_db`. Changing after initial setup requires deleting client registration.
+
+#### Internal Service Communication
+
+```bash
+SERVICE_INTERNAL_SECRET_KEY=<your-internal-secret>
+```
+
+**Must be identical** across all 7 backend services + sgivu-ml. Used for `X-Internal-Service-Key` header.
+
+#### Redis Configuration
+
+```bash
+REDIS_HOST=sgivu-redis
+REDIS_PORT=6379
+REDIS_PASSWORD=<your-redis-password>
+```
+
+`REDIS_PASSWORD` must match in both:
+1. Redis container `--requirepass` command
+2. Gateway `spring.data.redis.password`
+
+#### Frontend URLs
+
+```bash
+# Development
+DEV_ANGULAR_APP_URL=http://localhost:4200
+
+# Production
+PROD_ANGULAR_APP_URL=http://your-ec2-hostname
+```
+
+Controls:
+- CORS configuration in Auth and Gateway
+- OAuth2 redirect URIs
+- Post-logout redirect URIs
+
+#### AWS Configuration
+
+```bash
+AWS_ACCESS_KEY=<your-access-key>
+AWS_SECRET_KEY=<your-secret-key>
+AWS_REGION=us-east-1
+AWS_VEHICLES_BUCKET=sgivu-vehicle-images
+AWS_S3_ALLOWED_ORIGINS=http://your-ec2-hostname
+```
+
+#### Database Configuration
+
+PostgreSQL (shared instance):
+```bash
+POSTGRES_HOST=sgivu-postgres
+POSTGRES_DB=postgres
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=<your-postgres-password>
+```
+
+Per-service databases (example for Auth):
+```bash
+PROD_AUTH_DB_HOST=sgivu-postgres
+PROD_AUTH_DB_PORT=5432
+PROD_AUTH_DB_NAME=sgivu_auth_db
+PROD_AUTH_DB_USERNAME=postgres
+PROD_AUTH_DB_PASSWORD=<your-postgres-password>
+```
+
+## Management Scripts
+
+### run.bash
+
+Unified script to launch the stack:
+
+```bash
+# Development
+./run.bash --dev
+
+# Production
+./run.bash --prod
+```
+
+Automatically selects the appropriate compose file and environment.
+
+### rebuild-service.bash
+
+Rebuild and restart a single service without affecting others:
+
+```bash
+# Development
+./rebuild-service.bash --dev sgivu-auth
+
+# Production
+./rebuild-service.bash --prod sgivu-gateway
+```
+
+**Actions**:
+1. Builds/pulls latest image
+2. Publishes image (if applicable)
+3. Recreates only that container
+
+### build-and-push-images.bash
+
+Build and publish all service images:
+
+```bash
+./build-and-push-images.bash
+```
+
+**Actions**:
+- Traverses all services in `apps/backend/`, `apps/frontend/`, `apps/ml/`
+- Invokes `build-image.bash` for each service
+- Pushes to Docker Hub (`stevenrq/*` namespace)
+
+## Networking
+
+### Bridge Network
+
+```yaml
+networks:
+  sgivu-network:
+    driver: bridge
+```
+
+All services communicate through `sgivu-network`. Services reference each other by container name (e.g., `http://sgivu-auth:9000`).
+
+### Extra Hosts (Production)
+
+In production, services need to reach the EC2 hostname (for OAuth2 flows through Nginx):
+
+```yaml
+extra_hosts:
+  - "ec2-98-86-100-220.compute-1.amazonaws.com:host-gateway"
+```
+
+Maps EC2 hostname to Docker host gateway, allowing containers to reach Nginx.
+
+<Info>
+  In development, this is not needed. Services communicate directly via Docker network.
+</Info>
+
+## Volume Management
+
+### Persistent Volumes
+
+```yaml
+volumes:
+  mysql-data:      # Zipkin traces
+  postgres-data:   # All service databases
+  redis-data:      # Gateway sessions
+```
+
+### Backup Volumes
+
+```bash
+# Backup PostgreSQL
+docker compose exec sgivu-postgres pg_dumpall -U postgres > backup.sql
+
+# Restore PostgreSQL
+cat backup.sql | docker compose exec -T sgivu-postgres psql -U postgres
+
+# Backup Redis
+docker compose exec sgivu-redis redis-cli -a "$REDIS_PASSWORD" SAVE
+cp /var/lib/docker/volumes/sgivu-docker-compose_redis-data/_data/dump.rdb ./backup/
+```
+
+### Clean Volumes
+
+<Warning>
+  This deletes all data permanently. Use with caution.
+</Warning>
+
+```bash
+docker compose down -v
+```
+
+## Troubleshooting
+
+### Service Dependency Issues
+
+**Problem**: Services fail to start due to missing dependencies
+
+**Solution**: Verify startup order with `depends_on`. Wait for Config and Discovery before starting other services:
+
+```bash
+# Check service status
+docker compose ps
+
+# View logs for dependency
+docker compose logs sgivu-config
+```
+
+### Config Validation
+
+```bash
+# Validate compose file
+docker compose config
+
+# Check which environment file is loaded
+docker compose config | grep env_file
+```
+
+### Port Already Allocated
+
+```bash
+# Find conflicting process
+lsof -i :8080
+
+# Or adjust port mapping in compose file
+ports:
+  - "8090:8080"  # Map to different host port
+```
+
+### Variable Substitution
+
+**Problem**: Variables not replaced (show as `${VAR_NAME}`)
+
+**Solution**: Ensure `.env` file is in same directory as `docker-compose.yml` and contains all required variables:
+
+```bash
+# Verify variable resolution
+docker compose config | grep ISSUER_URL
+
+# Check for missing variables
+docker compose config 2>&1 | grep -i "warn"
+```
+
+## Next Steps
+
+- [Deployment Architecture](/infrastructure/deployment): Overall infrastructure design
+- [Nginx Configuration](/infrastructure/nginx): Reverse proxy setup
+- [Monitoring](/infrastructure/monitoring): Health checks and observability
+- [Environment Reference](https://github.com/stevenrq/sgivu/blob/main/infra/compose/sgivu-docker-compose/ENV-REFERENCE.md): Complete variable documentation

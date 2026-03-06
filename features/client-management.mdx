@@ -1,0 +1,267 @@
+---
+title: Client Management
+description: Manage individual and corporate clients for vehicle transactions
+---
+
+## Overview
+
+Client Management allows you to maintain a comprehensive database of your customers, whether they are individual persons or companies. This information is essential for creating purchase and sale contracts and maintaining customer relationships.
+
+## Client Types
+
+SGIVU supports two types of clients:
+
+<CardGroup cols={2}>
+  <Card title="Individual Persons" icon="user">
+    Private individuals purchasing or selling vehicles. Includes personal information and contact details.
+  </Card>
+  
+  <Card title="Companies" icon="building">
+    Business entities engaged in vehicle transactions. Includes corporate information and business contact details.
+  </Card>
+</CardGroup>
+
+## Managing Individual Clients
+
+### Adding a New Person
+
+<Steps>
+  <Step title="Navigate to Client Management">
+    Access the Client Management section from your dashboard. You need the `person:create` permission to add new individual clients.
+  </Step>
+  
+  <Step title="Enter Personal Information">
+    Fill in the client's details:
+    - **Full Name**: First and last name
+    - **Email Address**: Primary contact email
+    - **Phone Number**: Contact phone number
+    - **Date of Birth**: For age verification and record-keeping
+    - **Identification**: ID number or driver's license (if required)
+  </Step>
+  
+  <Step title="Add Address Information">
+    Enter the client's address:
+    - Street address
+    - City
+    - State/Province
+    - Postal code
+    - Country
+  </Step>
+  
+  <Step title="Add Notes (Optional)">
+    Include any additional information about the client's preferences, requirements, or transaction history.
+  </Step>
+  
+  <Step title="Save Client">
+    Review all information and save the new client record. The client is now available for use in contracts.
+  </Step>
+</Steps>
+
+### Updating Person Information
+
+<Card title="Edit Client Details" icon="pen-to-square">
+  Update client information at any time by searching for the person and selecting edit. Changes are reflected immediately across all related records.
+</Card>
+
+## Managing Company Clients
+
+### Adding a New Company
+
+<Steps>
+  <Step title="Access Company Management">
+    From Client Management, select the Companies tab. You need the `company:create` permission to add new corporate clients.
+  </Step>
+  
+  <Step title="Enter Company Information">
+    Fill in the corporate details:
+    - **Company Name**: Legal business name
+    - **Tax ID**: Business tax identification number
+    - **Email Address**: Primary business contact email
+    - **Phone Number**: Main business phone line
+    - **Industry**: Type of business (optional)
+  </Step>
+  
+  <Step title="Add Business Address">
+    Enter the company's registered or primary business address with complete details.
+  </Step>
+  
+  <Step title="Add Contact Person (Optional)">
+    If applicable, include the name and contact information for the primary contact person at the company.
+  </Step>
+  
+  <Step title="Save Company">
+    Review all information and save the company record. The company is now available for business transactions.
+  </Step>
+</Steps>
+
+### Updating Company Information
+
+<Card title="Edit Company Details" icon="building">
+  Company information can be updated at any time. This is particularly useful when business details change or new contact persons are assigned.
+</Card>
+
+## Searching for Clients
+
+SGIVU provides powerful search capabilities to quickly find any client in your database:
+
+### Person Search
+
+<CardGroup cols={2}>
+  <Card title="By Name" icon="magnifying-glass">
+    Search for individuals by first name, last name, or both.
+  </Card>
+  
+  <Card title="By Email" icon="envelope">
+    Find clients using their registered email address.
+  </Card>
+  
+  <Card title="By Phone" icon="phone">
+    Search using phone number for quick client lookup.
+  </Card>
+  
+  <Card title="By ID Number" icon="id-card">
+    Use identification numbers for precise matching.
+  </Card>
+</CardGroup>
+
+### Company Search
+
+<CardGroup cols={2}>
+  <Card title="By Company Name" icon="building">
+    Search using the business name for quick access.
+  </Card>
+  
+  <Card title="By Tax ID" icon="file-invoice">
+    Use tax identification number for exact matches.
+  </Card>
+  
+  <Card title="By Email" icon="at">
+    Find companies using their business email address.
+  </Card>
+  
+  <Card title="By Industry" icon="industry">
+    Filter companies by business type or industry.
+  </Card>
+</CardGroup>
+
+### Advanced Search Features
+
+<Card title="Multi-Criteria Search" icon="filter">
+  Combine multiple search parameters to narrow down results. For example, search for persons in a specific city or companies in a particular industry.
+</Card>
+
+## Client Counters and Statistics
+
+SGIVU provides real-time statistics about your client database:
+
+<CardGroup cols={3}>
+  <Card title="Total Persons" icon="users">
+    View the total number of individual clients in your system.
+  </Card>
+  
+  <Card title="Total Companies" icon="building">
+    See how many corporate clients you're managing.
+  </Card>
+  
+  <Card title="Recent Additions" icon="clock">
+    Track newly added clients for follow-up and relationship building.
+  </Card>
+</CardGroup>
+
+## Address Management
+
+Both persons and companies can have detailed address information:
+
+### Address Fields
+
+- **Street Address**: Primary street location
+- **City**: City or municipality
+- **State/Province**: Administrative region
+- **Postal Code**: ZIP or postal code
+- **Country**: Country name
+
+<Card title="Address Validation" icon="check">
+  The system validates address information to ensure data quality and consistency for official documents and contracts.
+</Card>
+
+## Integration with Contracts
+
+Client records are directly linked to purchase and sale contracts:
+
+<Steps>
+  <Step title="Client Selection">
+    When creating a new contract, search and select the client from your database.
+  </Step>
+  
+  <Step title="Auto-Population">
+    Client information automatically populates contract fields, reducing data entry and errors.
+  </Step>
+  
+  <Step title="Transaction History">
+    View all contracts associated with a client from their profile page, creating a complete transaction history.
+  </Step>
+</Steps>
+
+## Data Privacy and Security
+
+<CardGroup cols={2}>
+  <Card title="Permission-Based Access" icon="lock">
+    Only users with appropriate permissions can view, create, modify, or delete client records.
+  </Card>
+  
+  <Card title="Data Protection" icon="shield-halved">
+    Client information is protected and stored securely. Access is logged for audit purposes.
+  </Card>
+  
+  <Card title="Confidentiality" icon="eye-slash">
+    Personal and business information is treated as confidential and used only for authorized business purposes.
+  </Card>
+  
+  <Card title="Data Accuracy" icon="check-double">
+    Regularly review and update client information to maintain accurate records.
+  </Card>
+</CardGroup>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Keep information current">
+    Regularly verify and update client contact information, especially before initiating new transactions.
+  </Accordion>
+  
+  <Accordion title="Use consistent formatting">
+    Follow standard formats for phone numbers, addresses, and identification numbers to ensure data consistency.
+  </Accordion>
+  
+  <Accordion title="Verify business information">
+    For companies, verify tax IDs and business registration details to ensure legitimate transactions.
+  </Accordion>
+  
+  <Accordion title="Document relationships">
+    Use the notes field to record important details about client preferences, past transactions, or special requirements.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Cannot create new clients">
+    Verify you have the `person:create` or `company:create` permission. Ensure all required fields are filled correctly.
+  </Accordion>
+  
+  <Accordion title="Duplicate client warning">
+    The system may warn you if similar client information already exists. Verify this isn't a duplicate before proceeding.
+  </Accordion>
+  
+  <Accordion title="Search returns no results">
+    Check your search terms and filters. Try broader search criteria or verify the client exists in the database.
+  </Accordion>
+  
+  <Accordion title="Cannot update client information">
+    Ensure you have the `person:update` or `company:update` permission. Check that you're not violating any data validation rules.
+  </Accordion>
+  
+  <Accordion title="Address validation fails">
+    Verify all address fields are filled correctly. Some fields may have specific format requirements.
+  </Accordion>
+</AccordionGroup>

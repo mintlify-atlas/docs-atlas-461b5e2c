@@ -1,0 +1,295 @@
+---
+title: Demand Prediction
+description: AI-powered vehicle demand forecasting to optimize inventory
+---
+
+## Overview
+
+Demand Prediction uses machine learning to analyze your historical sales data and forecast future vehicle demand by segment. This powerful feature helps you make data-driven decisions about inventory management, pricing, and purchasing strategies.
+
+## How It Works
+
+SGIVU's demand prediction system analyzes:
+
+- Historical sales contracts and trends
+- Vehicle characteristics (type, make, model, year, price range)
+- Seasonal patterns and market conditions
+- Customer preferences and buying patterns
+
+The machine learning model processes this data to predict expected demand for different vehicle segments, helping you optimize your inventory composition.
+
+## Getting Predictions
+
+### Requesting a Prediction
+
+<Steps>
+  <Step title="Navigate to Demand Prediction">
+    Access the Demand Prediction section from your dashboard or analytics menu.
+  </Step>
+  
+  <Step title="Select Vehicle Segment">
+    Choose the vehicle characteristics you want to predict demand for:
+    - Vehicle type (car or motorcycle)
+    - Make and model
+    - Year range
+    - Price range
+    - Other relevant features
+  </Step>
+  
+  <Step title="Set Time Period">
+    Specify the time period for your prediction (next month, next quarter, next year).
+  </Step>
+  
+  <Step title="Generate Prediction">
+    Click to generate the prediction. The system sends your parameters to the ML service and returns the forecasted demand.
+  </Step>
+  
+  <Step title="Review Results">
+    Analyze the prediction results, including:
+    - Expected demand volume
+    - Confidence level
+    - Historical trends
+    - Recommendations
+  </Step>
+</Steps>
+
+### Understanding Prediction Results
+
+<Card title="Demand Estimate" icon="chart-line">
+  The system provides an estimated number of units expected to sell in your specified segment and timeframe. This is based on historical patterns and current trends.
+</Card>
+
+<Card title="Confidence Level" icon="gauge-high">
+  Each prediction includes a confidence score indicating how reliable the forecast is based on data quality and historical consistency.
+</Card>
+
+<Card title="Historical Context" icon="clock-rotate-left">
+  View historical sales data for the same segment to understand trends and validate predictions against past performance.
+</Card>
+
+## Prediction with Historical Trends
+
+For more detailed analysis, use the "Prediction with History" feature:
+
+<Steps>
+  <Step title="Request Detailed Prediction">
+    Select the "Prediction with History" option when generating forecasts.
+  </Step>
+  
+  <Step title="View Historical Data">
+    The system retrieves historical sales data for your selected segment, showing past performance over time.
+  </Step>
+  
+  <Step title="Compare Trends">
+    Visualize the historical trend alongside the future prediction to identify patterns and validate the forecast.
+  </Step>
+  
+  <Step title="Identify Opportunities">
+    Use the combined view to spot market opportunities, seasonal patterns, and optimal inventory levels.
+  </Step>
+</Steps>
+
+## Use Cases
+
+### Inventory Optimization
+
+<CardGroup cols={2}>
+  <Card title="Stock Planning" icon="boxes-stacked">
+    Predict which vehicle segments will be in high demand to guide your purchasing decisions.
+  </Card>
+  
+  <Card title="Avoid Overstocking" icon="warehouse">
+    Identify slow-moving segments to avoid tying up capital in low-demand inventory.
+  </Card>
+  
+  <Card title="Seasonal Preparation" icon="calendar">
+    Anticipate seasonal demand changes and adjust inventory accordingly.
+  </Card>
+  
+  <Card title="Budget Allocation" icon="dollar-sign">
+    Allocate purchasing budget to high-demand segments for better ROI.
+  </Card>
+</CardGroup>
+
+### Pricing Strategy
+
+<Card title="Dynamic Pricing" icon="tags">
+  Use demand predictions to inform pricing decisions. High predicted demand may support premium pricing, while low demand segments may need competitive pricing.
+</Card>
+
+### Sales Planning
+
+<Card title="Sales Targets" icon="bullseye">
+  Set realistic sales targets based on predicted demand for different vehicle segments.
+</Card>
+
+<Card title="Marketing Focus" icon="bullhorn">
+  Target marketing efforts toward high-demand segments predicted by the system.
+</Card>
+
+## Model Training
+
+The prediction system continuously improves through model retraining:
+
+### Automatic Training
+
+<Card title="Continuous Learning" icon="brain">
+  The ML model is periodically retrained with your latest sales data, ensuring predictions remain accurate as your business evolves.
+</Card>
+
+### Manual Retraining
+
+<Steps>
+  <Step title="Request Retraining">
+    Access the model management section and request a manual retrain if you have significant new data or market changes.
+  </Step>
+  
+  <Step title="Specify Data Range">
+    Optionally specify a date range for training data. By default, the system uses all available historical data.
+  </Step>
+  
+  <Step title="Training Process">
+    The system retrains the model using your latest contract data. This process may take several minutes depending on data volume.
+  </Step>
+  
+  <Step title="Model Validation">
+    The new model is validated against test data to ensure improved accuracy before being deployed.
+  </Step>
+  
+  <Step title="Deployment">
+    Once validated, the new model automatically becomes active and is used for all future predictions.
+  </Step>
+</Steps>
+
+## Model Information
+
+### Viewing Model Details
+
+<Card title="Model Metadata" icon="info-circle">
+  Access information about the current prediction model, including:
+  - Training date and version
+  - Data volume used for training
+  - Model performance metrics
+  - Feature importance
+</Card>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Regular prediction reviews">
+    Generate predictions regularly (monthly or quarterly) to stay ahead of market trends and adjust inventory proactively.
+  </Accordion>
+  
+  <Accordion title="Compare with actual results">
+    Track prediction accuracy by comparing forecasts with actual sales. This helps you understand model reliability and refine your strategies.
+  </Accordion>
+  
+  <Accordion title="Use multiple segments">
+    Generate predictions for various vehicle segments to get a comprehensive view of your entire inventory needs.
+  </Accordion>
+  
+  <Accordion title="Consider external factors">
+    Remember that predictions are based on historical data. Consider external factors like economic changes, new regulations, or market disruptions.
+  </Accordion>
+  
+  <Accordion title="Combine with market research">
+    Use demand predictions alongside traditional market research and industry insights for the most informed decisions.
+  </Accordion>
+</AccordionGroup>
+
+## Data Requirements
+
+### Minimum Data
+
+<Card title="Historical Sales Data" icon="database">
+  The prediction system requires sufficient historical sales contracts to generate accurate forecasts. More data generally leads to more reliable predictions.
+</Card>
+
+### Data Quality
+
+<CardGroup cols={2}>
+  <Card title="Complete Contracts" icon="check-circle">
+    Ensure contracts have complete vehicle and sale information for better predictions.
+  </Card>
+  
+  <Card title="Accurate Dates" icon="calendar-check">
+    Correct transaction dates are crucial for identifying trends and patterns.
+  </Card>
+  
+  <Card title="Consistent Categories" icon="layer-group">
+    Use consistent vehicle categorization (type, make, model) for meaningful segment analysis.
+  </Card>
+  
+  <Card title="Regular Updates" icon="rotate">
+    Keep contract data current by regularly entering new transactions.
+  </Card>
+</CardGroup>
+
+## Integration with Other Features
+
+### Purchase & Sales Contracts
+
+<Card title="Training Data Source" icon="arrows-left-right">
+  The prediction system uses your contract history as training data. More complete contract records lead to better predictions.
+</Card>
+
+### Vehicle Management
+
+<Card title="Inventory Planning" icon="clipboard-list">
+  Use predictions to inform vehicle purchasing decisions and inventory composition in Vehicle Management.
+</Card>
+
+## Technical Details
+
+<AccordionGroup>
+  <Accordion title="Machine Learning Technology">
+    SGIVU uses advanced machine learning algorithms including scikit-learn and optionally XGBoost for demand forecasting. The models are trained on your specific data for customized predictions.
+  </Accordion>
+  
+  <Accordion title="Feature Engineering">
+    The system automatically extracts relevant features from your contract data including temporal patterns, vehicle characteristics, and transaction trends.
+  </Accordion>
+  
+  <Accordion title="Model Versioning">
+    Each trained model is versioned and stored, allowing you to track model improvements over time and roll back if needed.
+  </Accordion>
+  
+  <Accordion title="Prediction API">
+    The prediction service exposes REST APIs that can be integrated with other systems or custom applications.
+  </Accordion>
+</AccordionGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="No predictions available">
+    This usually means no model has been trained yet. Ensure you have sufficient historical sales data and trigger a model training.
+  </Accordion>
+  
+  <Accordion title="Low confidence predictions">
+    Low confidence may indicate insufficient historical data for the specific segment. Try broader segment definitions or accumulate more sales history.
+  </Accordion>
+  
+  <Accordion title="Predictions seem inaccurate">
+    Compare predictions with actual results. If consistently inaccurate, retrain the model with more recent data or review your contract data quality.
+  </Accordion>
+  
+  <Accordion title="Model training fails">
+    Verify you have sufficient and valid historical data. Check system logs or contact your administrator if training errors persist.
+  </Accordion>
+  
+  <Accordion title="Prediction request times out">
+    Very complex predictions may take time to process. Simplify your segment criteria or try again during off-peak hours.
+  </Accordion>
+</AccordionGroup>
+
+## Future Enhancements
+
+The demand prediction system is continuously evolving. Future enhancements may include:
+
+- External market data integration
+- Competitor pricing analysis
+- Economic indicator incorporation
+- Multi-location demand forecasting
+- Automated inventory recommendations
+- Real-time prediction updates

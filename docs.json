@@ -1,122 +1,169 @@
 {
   "$schema": "https://mintlify.com/docs.json",
-  "theme": "mint",
-  "name": "Mint Starter Kit",
+  "name": "SGIVU",
+  "theme": "linden",
   "colors": {
-    "primary": "#16A34A",
-    "light": "#07C983",
-    "dark": "#15803D"
+    "primary": "#2563eb",
+    "light": "#3b82f6",
+    "dark": "#1e40af"
   },
-  "favicon": "/favicon.svg",
+  "navbar": {
+    "primary": {
+      "type": "github",
+      "href": "https://github.com/stevenrq/sgivu"
+    }
+  },
+  "footer": {
+    "socials": {
+      "github": "https://github.com/stevenrq/sgivu"
+    }
+  },
   "navigation": {
     "tabs": [
       {
-        "tab": "Guides",
+        "tab": "Documentation",
         "groups": [
           {
-            "group": "Getting started",
+            "group": "Overview",
             "pages": [
-              "index",
-              "quickstart",
-              "development"
+              "introduction",
+              "architecture",
+              "features"
             ]
           },
           {
-            "group": "Customization",
+            "group": "Getting Started",
             "pages": [
-              "essentials/settings",
-              "essentials/navigation"
+              "getting-started/quickstart",
+              "getting-started/installation",
+              "getting-started/configuration",
+              "getting-started/docker-deployment"
             ]
           },
           {
-            "group": "Writing content",
+            "group": "Core Features",
             "pages": [
-              "essentials/markdown",
-              "essentials/code",
-              "essentials/images",
-              "essentials/reusable-snippets"
+              "features/authentication",
+              "features/user-management",
+              "features/vehicle-management",
+              "features/client-management",
+              "features/purchase-sales",
+              "features/demand-prediction"
             ]
           },
           {
-            "group": "AI tools",
+            "group": "Infrastructure",
             "pages": [
-              "ai-tools/cursor",
-              "ai-tools/claude-code",
-              "ai-tools/windsurf"
+              "infrastructure/deployment",
+              "infrastructure/docker-compose",
+              "infrastructure/nginx",
+              "infrastructure/monitoring"
+            ]
+          },
+          {
+            "group": "Security",
+            "pages": [
+              "security/oauth2-oidc",
+              "security/bff-pattern",
+              "security/jwt-tokens",
+              "security/service-communication"
             ]
           }
         ]
       },
       {
-        "tab": "API reference",
+        "tab": "Backend Services",
         "groups": [
           {
-            "group": "API documentation",
+            "group": "Services",
             "pages": [
-              "api-reference/introduction"
+              "services/overview",
+              "services/auth",
+              "services/gateway",
+              "services/config",
+              "services/discovery",
+              "services/user",
+              "services/vehicle",
+              "services/purchase-sale",
+              "services/client"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Machine Learning",
+        "groups": [
+          {
+            "group": "ML Service",
+            "pages": [
+              "ml/overview",
+              "ml/prediction-api",
+              "ml/training",
+              "ml/model-management"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Frontend",
+        "groups": [
+          {
+            "group": "Angular Application",
+            "pages": [
+              "frontend/overview",
+              "frontend/setup",
+              "frontend/architecture",
+              "frontend/features"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Authentication",
+            "pages": [
+              "api/auth/oauth2",
+              "api/auth/session"
             ]
           },
           {
-            "group": "Endpoint examples",
+            "group": "User Management",
             "pages": [
-              "api-reference/endpoint/get",
-              "api-reference/endpoint/create",
-              "api-reference/endpoint/delete",
-              "api-reference/endpoint/webhook"
+              "api/users/overview",
+              "api/users/roles-permissions"
+            ]
+          },
+          {
+            "group": "Vehicle Management",
+            "pages": [
+              "api/vehicles/crud",
+              "api/vehicles/images"
+            ]
+          },
+          {
+            "group": "Client Management",
+            "pages": [
+              "api/clients/overview"
+            ]
+          },
+          {
+            "group": "Purchase & Sales",
+            "pages": [
+              "api/purchase-sales/overview"
+            ]
+          },
+          {
+            "group": "Machine Learning",
+            "pages": [
+              "api/ml/predict",
+              "api/ml/retrain",
+              "api/ml/models"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Documentation",
-          "href": "https://mintlify.com/docs",
-          "icon": "book-open-cover"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://mintlify.com/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
-  },
-  "logo": {
-    "light": "/logo/light.svg",
-    "dark": "/logo/dark.svg"
-  },
-  "navbar": {
-    "links": [
-      {
-        "label": "Support",
-        "href": "mailto:hi@mintlify.com"
-      }
-    ],
-    "primary": {
-      "type": "button",
-      "label": "Dashboard",
-      "href": "https://dashboard.mintlify.com"
-    }
-  },
-  "contextual": {
-    "options": [
-     "copy",
-     "view",
-     "chatgpt",
-     "claude",
-     "perplexity",
-     "mcp",
-     "cursor",
-     "vscode"
-   ]
-  },
-  "footer": {
-    "socials": {
-      "x": "https://x.com/mintlify",
-      "github": "https://github.com/mintlify",
-      "linkedin": "https://linkedin.com/company/mintlify"
-    }
+    ]
   }
 }

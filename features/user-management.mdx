@@ -1,0 +1,185 @@
+---
+title: User Management
+description: Create and manage user accounts, roles, and permissions in SGIVU
+---
+
+## Overview
+
+User Management allows administrators to create user accounts, assign roles and permissions, and manage personal information for everyone who accesses the SGIVU platform.
+
+## Managing Users
+
+### Creating a New User
+
+<Steps>
+  <Step title="Navigate to User Management">
+    From the main dashboard, access the User Management section. You must have the `user:create` permission to create new users.
+  </Step>
+  
+  <Step title="Enter Personal Information">
+    Fill in the user's personal details:
+    - Full name (first and last name)
+    - Email address
+    - Phone number
+    - Address information
+    - Date of birth
+  </Step>
+  
+  <Step title="Set Username and Password">
+    Choose a unique username for the account and set a secure password. The system enforces password strength requirements including:
+    - Minimum length requirements
+    - Mix of character types
+    - No common patterns
+  </Step>
+  
+  <Step title="Assign Roles">
+    Select one or more roles for the user. Roles determine what features and data the user can access. Common roles include:
+    - **Admin**: Full system access
+    - **Manager**: Can manage inventory and transactions
+    - **Sales**: Can view and create purchase/sale contracts
+    - **Viewer**: Read-only access to data
+  </Step>
+  
+  <Step title="Save and Activate">
+    Review all information and save the new user account. The user can now log in with their credentials.
+  </Step>
+</Steps>
+
+### Updating User Information
+
+<Card title="Edit User Details" icon="pen-to-square">
+  You can update user information at any time by searching for the user and selecting the edit option. Changes to personal information, roles, or permissions take effect immediately.
+</Card>
+
+### Searching for Users
+
+SGIVU provides powerful search capabilities:
+
+<CardGroup cols={2}>
+  <Card title="By Username" icon="magnifying-glass">
+    Search for users by their username for quick access to their profile.
+  </Card>
+  
+  <Card title="By Email" icon="envelope">
+    Find users by their registered email address.
+  </Card>
+  
+  <Card title="By Name" icon="user">
+    Search by first name or last name to locate specific individuals.
+  </Card>
+  
+  <Card title="Advanced Filters" icon="filter">
+    Combine multiple criteria to narrow down your search results.
+  </Card>
+</CardGroup>
+
+## Roles and Permissions
+
+### Understanding Roles
+
+Roles are predefined sets of permissions that determine what users can do in SGIVU. Each role contains multiple permissions grouped by feature area.
+
+### Permission Types
+
+Permissions in SGIVU follow a consistent pattern across all modules:
+
+<AccordionGroup>
+  <Accordion title="User Permissions">
+    - `user:create` - Create new user accounts
+    - `user:read` - View user information
+    - `user:update` - Modify user details
+    - `user:delete` - Remove user accounts
+  </Accordion>
+  
+  <Accordion title="Vehicle Permissions">
+    - `vehicle:create` - Add new vehicles to inventory
+    - `vehicle:read` - View vehicle information
+    - `vehicle:update` - Modify vehicle details
+    - `vehicle:delete` - Remove vehicles from system
+  </Accordion>
+  
+  <Accordion title="Client Permissions">
+    - `person:create` / `company:create` - Add new clients
+    - `person:read` / `company:read` - View client information
+    - `person:update` / `company:update` - Modify client details
+    - `person:delete` / `company:delete` - Remove clients
+  </Accordion>
+  
+  <Accordion title="Contract Permissions">
+    - `purchase-sale:create` - Create purchase/sale contracts
+    - `purchase-sale:read` - View contract details
+    - `purchase-sale:update` - Modify contract information
+    - `purchase-sale:delete` - Cancel or remove contracts
+  </Accordion>
+</AccordionGroup>
+
+### Managing Roles
+
+<Steps>
+  <Step title="View Available Roles">
+    Navigate to the Roles section to see all defined roles in the system and their associated permissions.
+  </Step>
+  
+  <Step title="Assign Roles to Users">
+    When creating or editing a user, select the appropriate roles. Users can have multiple roles, and their effective permissions will be the combination of all assigned roles.
+  </Step>
+  
+  <Step title="Review Permissions">
+    Regularly audit user roles and permissions to ensure users have appropriate access levels for their responsibilities.
+  </Step>
+</Steps>
+
+## Personal Information Management
+
+### Address Information
+
+Store complete address details for users including:
+- Street address
+- City
+- State/Province
+- Postal code
+- Country
+
+<Card title="Address Validation" icon="location-dot">
+  The system validates address information to ensure data quality and consistency across the platform.
+</Card>
+
+## Security Considerations
+
+<CardGroup cols={2}>
+  <Card title="Password Strength" icon="key">
+    SGIVU enforces strong password requirements to protect user accounts. Passwords must meet minimum complexity standards.
+  </Card>
+  
+  <Card title="Character Validation" icon="check-circle">
+    Special character validation ensures usernames and personal information follow consistent formatting rules.
+  </Card>
+  
+  <Card title="Principle of Least Privilege" icon="user-shield">
+    Only grant users the minimum permissions required to perform their job functions.
+  </Card>
+  
+  <Card title="Regular Audits" icon="clipboard-list">
+    Periodically review user accounts, roles, and access patterns to maintain security.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Cannot create new users">
+    Verify you have the `user:create` permission. Check that all required fields are filled correctly and the username is unique.
+  </Accordion>
+  
+  <Accordion title="Password requirements not clear">
+    Hover over the password field for detailed requirements. Passwords must include uppercase, lowercase, numbers, and special characters.
+  </Accordion>
+  
+  <Accordion title="User cannot access features after role assignment">
+    Log out and log back in for permission changes to take effect. If issues persist, verify the role contains the necessary permissions.
+  </Accordion>
+  
+  <Accordion title="Search returns no results">
+    Try broader search terms or check your filter settings. Ensure you have permission to view the users you're searching for.
+  </Accordion>
+</AccordionGroup>

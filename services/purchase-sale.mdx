@@ -1,0 +1,561 @@
+---
+title: Purchase-Sale Service
+description: Contract management and reporting for vehicle transactions
+---
+
+## Overview
+
+`sgivu-purchase-sale` manages purchase and sale contracts for vehicles. It provides creation, advanced search, reporting (PDF/XLSX/CSV), and lifecycle management of contracts. The service integrates with `sgivu-user`, `sgivu-client`, and `sgivu-vehicle` for data enrichment, and with `sgivu-auth` for authorization.
+
+## Technologies
+
+- **Java**: 21
+- **Spring Boot**: 4.0.1
+- **Spring Security**: Resource Server (JWT validation)
+- **Spring Data JPA**: PostgreSQL persistence
+- **Flyway**: Database migrations
+- **Spring Cloud Config Client**: Centralized configuration
+- **Spring Cloud Eureka Client**: Service registration
+- **SpringDoc OpenAPI**: Swagger UI documentation
+- **MapStruct**: DTO mapping
+- **Lombok**: Code generation
+- **OpenPDF**: PDF report generation
+- **Apache POI**: Excel (XLSX) report generation
+
+## Prerequisites
+
+- JDK 21
+- Maven 3.9+
+- PostgreSQL database
+- `sgivu-config` and `sgivu-discovery` services running
+- Related services: `sgivu-user`, `sgivu-client`, `sgivu-vehicle` (for data enrichment)
+
+## Running the Service
+
+### Development with Docker Compose
+
+```bash
+cd infra/compose/sgivu-docker-compose
+docker compose -f docker-compose.dev.yml up -d
+```
+
+### Local Execution
+
+```bash
+./mvnw clean install -DskipTests
+./mvnw spring-boot:run
+```
+
+### Docker Build
+
+```bash
+./build-image.bash
+docker build -t sgivu-purchase-sale:local .
+```
+
+## Contract Types
+
+### Purchase Contract
+
+**When**: Company purchases a vehicle from a supplier/individual
+
+**Key Fields**:
+- `contractType`: `PURCHASE`
+- `clientId`: Seller/supplier ID
+- `vehicleId`: Vehicle being purchased
+- `userId`: Employee handling the purchase
+- `purchasePrice`: Amount paid to acquire vehicle
+- `contractDate`: Date of purchase
+
+### Sale Contract
+
+**When**: Company sells a vehicle to a customer
+
+**Key Fields**:
+- `contractType`: `SALE`
+- `clientId`: Buyer/customer ID
+- `vehicleId`: Vehicle being sold
+- `userId`: Sales representative
+- `salePrice`: Amount customer pays
+- `contractDate`: Date of sale
+
+## Contract Status Workflow
+
+<Steps>
+  <Step title="DRAFT">
+    Initial state when contract is created but not finalized
+    
+    **Allowed Transitions**: PENDING, CANCELLED
+  </Step>
+  
+  <Step title="PENDING">
+    Contract submitted and awaiting approval
+    
+    **Allowed Transitions**: APPROVED, REJECTED, CANCELLED
+  </Step>
+  
+  <Step title="APPROVED">
+    Contract approved and ready for execution
+    
+    **Allowed Transitions**: COMPLETED, CANCELLED
+  </Step>
+  
+  <Step title="REJECTED">
+    Contract rejected during approval process
+    
+    **Terminal State**: No further transitions
+  </Step>
+  
+  <Step title="COMPLETED">
+    Contract executed and transaction completed
+    
+    **Terminal State**: No further transitions
+  </Step>
+  
+  <Step title="CANCELLED">
+    Contract cancelled before completion
+    
+    **Terminal State**: No further transitions
+  </Step>
+</Steps>
+
+## Security
+
+### Authentication
+
+**JWT Token Validation**:
+- Tokens issued by `sgivu-auth`
+- `JwtAuthenticationConverter` maps `rolesAndPermissions` claim to authorities
+- Resource Server validates signature via JWKS endpoint
+
+### Authorization
+
+**Required Permissions**:
+- `purchase-sale:create` - Create contracts
+- `purchase-sale:read` - View contracts
+- `purchase-sale:update` - Update contracts
+- `purchase-sale:delete` - Delete contracts
+- `purchase-sale:approve` - Approve contracts
+- `purchase-sale:report` - Generate reports
+
+### Internal Service Communication
+
+**X-Internal-Service-Key Header**:
+- Allows service-to-service calls without JWT
+- Used for internal endpoints
+- Must be kept secret
+
+<Warning>
+Internal service key bypasses authentication. Ensure:
+- Key is stored in secret manager
+- Only authorized services have access
+- Key is rotated regularly
+- Gateway blocks `/internal/*` endpoints
+</Warning>
+
+## Database Schema
+
+### Flyway Migrations
+
+**Location**: `src/main/resources/db/migration`
+
+**V1__initial_schema.sql** creates:
+
+**purchase_sales table**:
+- `id`: Primary key
+- `contract_type`: ENUM (PURCHASE, SALE)
+- `contract_status`: ENUM (DRAFT, PENDING, APPROVED, REJECTED, COMPLETED, CANCELLED)
+- `contract_date`: Transaction date
+- `client_id`: Reference to client (buyer or seller)
+- `user_id`: Reference to employee handling transaction
+- `vehicle_id`: Reference to vehicle
+- `purchase_price`: Price paid (for purchases)
+- `sale_price`: Price received (for sales)
+- `notes`: Additional contract notes
+- `created_at`, `updated_at`: Audit timestamps
+
+**Indexes**:
+- `idx_purchase_sale_client_id` on `client_id`
+- `idx_purchase_sale_user_id` on `user_id`
+- `idx_purchase_sale_vehicle_id` on `vehicle_id`
+- `idx_purchase_sale_status` on `contract_status`
+- `idx_purchase_sale_type` on `contract_type`
+- `idx_purchase_sale_date` on `created_at`
+
+## API Endpoints
+
+### Contract Management
+
+<ResponseField name="GET /v1/purchase-sales" type="protected">
+  List contracts with advanced filtering
+  
+  **Required Permission**: `purchase-sale:read`
+  
+  **Query Parameters**:
+  - `contractType`: Filter by PURCHASE or SALE
+  - `contractStatus`: Filter by status
+  - `clientId`: Filter by client
+  - `vehicleId`: Filter by vehicle
+  - `userId`: Filter by user
+  - `startDate`, `endDate`: Date range
+  - `page`, `size`, `sort`: Pagination
+</ResponseField>
+
+<ResponseField name="GET /v1/purchase-sales/{id}" type="protected">
+  Get contract by ID with enriched data
+  
+  **Required Permission**: `purchase-sale:read`
+  
+  **Returns**: Contract with client, user, and vehicle details
+</ResponseField>
+
+<ResponseField name="POST /v1/purchase-sales" type="protected">
+  Create new contract
+  
+  **Required Permission**: `purchase-sale:create`
+  
+  **Validations**:
+  - Valid contract type
+  - Client, user, and vehicle exist
+  - Appropriate price field populated
+  - Future contract date not allowed
+</ResponseField>
+
+<ResponseField name="PUT /v1/purchase-sales/{id}" type="protected">
+  Update existing contract
+  
+  **Required Permission**: `purchase-sale:update`
+  
+  **Restrictions**: Cannot update completed or cancelled contracts
+</ResponseField>
+
+<ResponseField name="PATCH /v1/purchase-sales/{id}/status" type="protected">
+  Update contract status
+  
+  **Required Permission**: `purchase-sale:update` or `purchase-sale:approve`
+  
+  **Body**: `{"status": "APPROVED"}`
+  
+  **Validations**: Status transition must be valid per workflow
+</ResponseField>
+
+<ResponseField name="DELETE /v1/purchase-sales/{id}" type="protected">
+  Delete contract (soft delete)
+  
+  **Required Permission**: `purchase-sale:delete`
+  
+  **Restrictions**: Only DRAFT contracts can be deleted
+</ResponseField>
+
+### Reporting
+
+<ResponseField name="GET /v1/purchase-sales/reports/pdf" type="protected">
+  Generate PDF report
+  
+  **Required Permission**: `purchase-sale:report`
+  
+  **Query Parameters**: Same as list endpoint for filtering
+  
+  **Response**: PDF file download
+</ResponseField>
+
+<ResponseField name="GET /v1/purchase-sales/reports/xlsx" type="protected">
+  Generate Excel report
+  
+  **Required Permission**: `purchase-sale:report`
+  
+  **Query Parameters**: Same as list endpoint for filtering
+  
+  **Response**: XLSX file download
+</ResponseField>
+
+<ResponseField name="GET /v1/purchase-sales/reports/csv" type="protected">
+  Generate CSV report
+  
+  **Required Permission**: `purchase-sale:report`
+  
+  **Query Parameters**: Same as list endpoint for filtering
+  
+  **Response**: CSV file download
+</ResponseField>
+
+## Request/Response Examples
+
+### Create Purchase Contract
+
+```json
+POST /v1/purchase-sales
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "contractType": "PURCHASE",
+  "contractStatus": "DRAFT",
+  "contractDate": "2024-03-06",
+  "clientId": 123,
+  "userId": 456,
+  "vehicleId": 789,
+  "purchasePrice": 25000.00,
+  "notes": "Vehicle purchased from private seller"
+}
+```
+
+### Response
+
+```json
+{
+  "id": 1001,
+  "contractType": "PURCHASE",
+  "contractStatus": "DRAFT",
+  "contractDate": "2024-03-06",
+  "client": {
+    "id": 123,
+    "name": "John Doe",
+    "type": "PERSON"
+  },
+  "user": {
+    "id": 456,
+    "username": "jsmith",
+    "fullName": "Jane Smith"
+  },
+  "vehicle": {
+    "id": 789,
+    "vin": "1HGBH41JXMN109186",
+    "brand": "Toyota",
+    "model": "Camry",
+    "year": 2023
+  },
+  "purchasePrice": 25000.00,
+  "salePrice": null,
+  "notes": "Vehicle purchased from private seller",
+  "createdAt": "2024-03-06T10:30:00Z",
+  "updatedAt": "2024-03-06T10:30:00Z"
+}
+```
+
+### Update Contract Status
+
+```json
+PATCH /v1/purchase-sales/1001/status
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "status": "PENDING"
+}
+```
+
+## Service Integration
+
+### Data Enrichment
+
+Contract responses include enriched data from related services:
+
+**Client Information** (from `sgivu-client`):
+- Person: Full name, document number
+- Company: Legal name, tax ID
+
+**User Information** (from `sgivu-user`):
+- Username, full name
+- Role information
+
+**Vehicle Information** (from `sgivu-vehicle`):
+- VIN, brand, model, year
+- Current status
+- Primary image
+
+### Communication Pattern
+
+```java
+// Example: Enriching contract with client data
+@Service
+public class ContractEnrichmentService {
+    
+    @LoadBalanced
+    private final WebClient webClient;
+    
+    public PurchaseSaleDTO enrichContract(PurchaseSale contract) {
+        // Fetch client data
+        ClientDTO client = webClient.get()
+            .uri("http://sgivu-client/v1/clients/{id}", contract.getClientId())
+            .header("X-Internal-Service-Key", internalKey)
+            .retrieve()
+            .bodyToMono(ClientDTO.class)
+            .block();
+            
+        // Similar for user and vehicle...
+        
+        return mapToDTO(contract, client, user, vehicle);
+    }
+}
+```
+
+## Report Generation
+
+### PDF Reports
+
+**Library**: OpenPDF
+
+**Features**:
+- Company header with logo
+- Contract details table
+- Client, user, and vehicle information
+- Signature section
+- Page numbering
+
+### Excel Reports
+
+**Library**: Apache POI
+
+**Features**:
+- Formatted headers
+- Color-coded status cells
+- Formula cells for totals
+- Auto-sized columns
+- Freeze panes
+
+### CSV Reports
+
+**Format**: RFC 4180 compliant
+
+**Features**:
+- Header row
+- Proper escaping
+- UTF-8 encoding
+- Flat structure (no nested objects)
+
+## Observability
+
+### Actuator Endpoints
+
+- `/actuator/health`: Service health with database connectivity
+- `/actuator/metrics`: Custom metrics for contract operations
+- `/actuator/info`: Application metadata
+
+### OpenAPI Documentation
+
+**Swagger UI**: `/swagger-ui/index.html` (when enabled)
+
+### Distributed Tracing
+
+**Brave/Zipkin**:
+- Configured via `sgivu-config`
+- Traces service-to-service calls
+- Report generation spans
+
+## Testing
+
+```bash
+./mvnw test
+```
+
+**Test Coverage**:
+- Unit tests for services and mappers
+- Repository integration tests
+- Status transition validation tests
+- Report generation tests
+- Security authorization tests
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="401/403 Authorization errors">
+    **Symptoms**: API requests return unauthorized or forbidden
+    
+    **Solutions**:
+    - Verify Bearer token contains required permissions
+    - Check token issuer matches `sgivu-auth`
+    - Ensure user has appropriate role assignments
+    - Validate token hasn't expired
+  </Accordion>
+  
+  <Accordion title="Integration failures">
+    **Symptoms**: Cannot fetch client/user/vehicle data
+    
+    **Solutions**:
+    - Verify `sgivu-config` and `sgivu-discovery` are accessible
+    - Check related services are registered in Eureka
+    - Ensure internal service key is correct
+    - Review network connectivity between services
+    - Check for circuit breaker open state
+  </Accordion>
+  
+  <Accordion title="Invalid status transition">
+    **Symptoms**: Status update rejected with validation error
+    
+    **Solutions**:
+    - Review allowed transitions in workflow
+    - Cannot update terminal states (COMPLETED, REJECTED, CANCELLED)
+    - Check current status before attempting transition
+    - Verify user has approval permission for certain transitions
+  </Accordion>
+  
+  <Accordion title="Report generation issues">
+    **Symptoms**: PDF/Excel generation fails or times out
+    
+    **Solutions**:
+    - Check OpenPDF and Apache POI dependencies
+    - Review memory limits (reports can be memory-intensive)
+    - Limit result set size for large reports
+    - Check file system write permissions
+    - Review logs for library-specific errors
+    - Consider async report generation for large datasets
+  </Accordion>
+  
+  <Accordion title="Database constraint violations">
+    **Symptoms**: Contract creation fails with FK constraint error
+    
+    **Solutions**:
+    - Verify client_id exists in client service
+    - Verify user_id exists in user service
+    - Verify vehicle_id exists in vehicle service
+    - Check vehicle isn't already in active contract
+    - Ensure referenced entities aren't soft-deleted
+  </Accordion>
+</AccordionGroup>
+
+## Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|----------|
+| `DB_HOST` | PostgreSQL host | `sgivu-postgres-purchase-sale` |
+| `DB_PORT` | PostgreSQL port | `5432` |
+| `DB_NAME` | Database name | `sgivu_purchase_sale` |
+| `DB_USERNAME` | Database username | `sgivu_user` |
+| `DB_PASSWORD` | Database password | `secure_password` |
+| `SERVICE_INTERNAL_SECRET_KEY` | Internal service key | `secret-key-value` |
+| `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI` | Auth server issuer | `http://sgivu-auth:9000` |
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Status Workflow" icon="diagram-project">
+    Enforce valid status transitions to maintain data integrity
+  </Card>
+  <Card title="Data Enrichment" icon="sitemap">
+    Cache frequently accessed reference data to reduce service calls
+  </Card>
+  <Card title="Async Reports" icon="clock">
+    Generate large reports asynchronously to avoid timeouts
+  </Card>
+  <Card title="Audit Trail" icon="file-lines">
+    Log all status changes with user and timestamp
+  </Card>
+</CardGroup>
+
+## Related Services
+
+<CardGroup cols={2}>
+  <Card title="Vehicle Service" icon="car" href="/services/vehicle">
+    Provides vehicle data for contracts
+  </Card>
+  <Card title="Client Service" icon="address-book" href="/services/client">
+    Provides client (buyer/seller) data
+  </Card>
+  <Card title="User Service" icon="users" href="/services/user">
+    Provides employee data for contracts
+  </Card>
+  <Card title="Gateway" icon="shield" href="/services/gateway">
+    Routes purchase-sale API requests
+  </Card>
+</CardGroup>

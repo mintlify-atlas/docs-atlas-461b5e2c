@@ -1,0 +1,197 @@
+---
+title: Frontend Overview
+description: Overview of the SGIVU Angular frontend application
+---
+
+# Frontend Overview
+
+The **sgivu-frontend** is a modern Single Page Application (SPA) built with Angular 21 that provides the user interface for the SGIVU vehicle inventory management platform. It handles client management, vehicle inventory, user administration, and purchase/sales transactions.
+
+## Technology Stack
+
+### Core Framework
+- **Angular 21** - Latest Angular framework with standalone components
+- **TypeScript 5.9.3** - Type-safe JavaScript development
+- **RxJS 7.8.2** - Reactive programming with observables and signals
+- **Zone.js 0.16.0** - Change detection (prepared for zoneless migration)
+
+### UI & Styling
+- **Bootstrap 5.3.8** - Responsive UI framework
+- **Bootstrap Icons 1.13.1** - Icon library
+- **SweetAlert2 11.26.10** - Beautiful alert and modal dialogs
+
+### Data Visualization
+- **Chart.js 4.5.1** - Charting library
+- **ng2-charts 8.0.0** - Angular wrapper for Chart.js
+
+### Development Tools
+- **Angular CLI 21.0.3** - Command-line interface
+- **Karma & Jasmine** - Unit testing framework
+- **ESLint 9.39.2** - Code linting
+- **Prettier 3.7.4** - Code formatting
+- **Angular ESLint 21.0.1** - Angular-specific linting rules
+
+## Key Features
+
+### Authentication & Authorization
+- OAuth2/OIDC authentication via `sgivu-gateway`
+- Session-based authentication with `/auth/session` endpoint
+- Role-based access control (RBAC)
+- Permission-based route guards
+- PKCE flow handled by backend gateway
+
+### Dashboard
+- Real-time KPI cards for business metrics
+- Vehicle inventory statistics
+- Sales and purchase analytics
+- Interactive charts and visualizations
+- Demand prediction insights
+
+### User Management
+- User CRUD operations
+- Role and permission assignment
+- User profile management
+- Person information management
+
+### Client Management
+- Person (individual) client management
+- Company client management
+- Address information with form utilities
+- Client search and filtering
+
+### Vehicle Inventory
+- Car management with detailed specifications
+- Motorcycle management
+- Vehicle status tracking (available, reserved, sold)
+- Image upload with presigned URLs to S3
+- Multi-image support per vehicle
+- Vehicle search and filtering
+
+### Purchase & Sales
+- Purchase transaction management
+- Sales transaction management
+- Quick search for vehicles and clients
+- Report generation with date ranges
+- Transaction lookup and filtering
+
+## Architecture Highlights
+
+### Modern Angular Patterns
+- **Standalone Components** - No NgModule required
+- **Signal-based State** - Reactive state management with signals
+- **OnPush Change Detection** - Optimized performance
+- **Lazy Loading** - Route-based code splitting
+- **Dependency Injection** - Service-based architecture
+
+### Zoneless-Ready
+The application is prepared for migration to zoneless change detection:
+- Most components use signals (`signal`, `computed`, `effect`)
+- OnPush change detection strategy implemented
+- Minimal mutable properties remain (~20 in 8 components)
+
+### Shared Utilities
+- Form validation and utilities
+- Date and currency formatters
+- Error handling utilities
+- CRUD operation factories
+- Filter query builders
+- SweetAlert wrapper utilities
+
+## Backend Integration
+
+The frontend communicates exclusively with the `sgivu-gateway` service:
+
+- **API URL**: Configured in `environment.apiUrl`
+- **Authentication**: OAuth2 via gateway at `/oauth2/authorization/sgivu-gateway`
+- **Session Check**: `/auth/session` endpoint
+- **API Endpoints**: All business APIs proxied through `/v1/*`
+- **HTTP Interceptor**: `defaultOAuthInterceptor` handles authentication headers
+
+## Environment Configuration
+
+Configuration is managed through environment files:
+
+```typescript
+export const environment = {
+  production: false,
+  apiUrl: 'http://localhost:8080',
+  issuer: 'http://sgivu-auth:9000',
+  clientId: 'angular-local'
+};
+```
+
+### Environment Variables
+- `apiUrl` - Backend gateway URL
+- `issuer` - OAuth2 authorization server URL
+- `clientId` - OAuth2 client identifier
+- `production` - Production mode flag
+
+## Project Structure
+
+```
+src/app/
+├── features/              # Feature modules
+│   ├── auth/             # Authentication & authorization
+│   ├── dashboard/        # Main dashboard
+│   ├── users/           # User management
+│   ├── clients/         # Client management
+│   ├── vehicles/        # Vehicle inventory
+│   └── purchase-sales/  # Transaction management
+├── shared/              # Shared components & utilities
+│   ├── components/      # Reusable UI components
+│   ├── services/        # Shared services
+│   ├── pipes/          # Custom pipes
+│   ├── directives/     # Custom directives
+│   ├── models/         # Shared data models
+│   └── utils/          # Utility functions
+├── app.config.ts       # Application configuration
+└── app.routes.ts       # Route definitions
+```
+
+## Deployment
+
+The application is designed for static hosting:
+
+1. **Build**: `npm run build` (outputs to `dist/sgivu-frontend`)
+2. **Production Build**: `npm run build -- --configuration production`
+3. **Hosting Options**:
+   - AWS S3 + CloudFront (recommended)
+   - Nginx static file server
+   - Any CDN or static hosting service
+
+### Deployment Considerations
+- Ensure proper SPA routing configuration (serve `index.html` for all routes)
+- Configure `base href` correctly
+- Set up CORS for API gateway communication
+- Use HTTPS in production
+- Configure CSP headers appropriately
+
+## Performance Optimizations
+
+- **Lazy Loading**: Feature modules loaded on demand
+- **OnPush Strategy**: Reduced change detection cycles
+- **Signal-based State**: Efficient reactivity
+- **HTTP Interceptors**: Centralized request handling
+- **Image Optimization**: Presigned URL uploads to S3
+- **Code Splitting**: Route-based chunking
+
+## Localization
+
+The application is configured for Colombian Spanish (`es-CO`):
+- Date formatting follows Colombian conventions
+- Currency displayed in COP (Colombian Peso)
+- Custom pipes: `COPCurrencyPipe`, `UtcToGmtMinus5Pipe`
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Setup Guide" icon="rocket" href="/frontend/setup">
+    Get started with local development setup
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/frontend/architecture">
+    Deep dive into architectural patterns
+  </Card>
+  <Card title="Features" icon="puzzle-piece" href="/frontend/features">
+    Explore feature modules in detail
+  </Card>
+</CardGroup>

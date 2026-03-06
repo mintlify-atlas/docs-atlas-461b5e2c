@@ -1,0 +1,196 @@
+---
+title: Quickstart
+description: Get SGIVU running locally in minutes with Docker Compose
+---
+
+Get SGIVU up and running on your local machine in minutes using Docker Compose. This guide will have you exploring the platform quickly.
+
+## Prerequisites
+
+Before you begin, ensure you have the following installed:
+
+- **Docker** (20.10 or later)
+- **Docker Compose** (v2.0 or later)
+- **Git** (for cloning the repository)
+- At least **4GB of available RAM**
+- At least **10GB of free disk space**
+
+## Quick Start
+
+<Steps>
+
+<Step title="Clone the repository">
+
+Clone the SGIVU repository to your local machine:
+
+```bash
+git clone https://github.com/your-org/sgivu.git
+cd sgivu
+```
+
+</Step>
+
+<Step title="Navigate to Docker Compose directory">
+
+Navigate to the Docker Compose infrastructure directory:
+
+```bash
+cd infra/compose/sgivu-docker-compose
+```
+
+</Step>
+
+<Step title="Create environment file">
+
+Copy the development environment template:
+
+```bash
+cp .env.dev.example .env.dev
+```
+
+The default values in `.env.dev.example` are pre-configured for local development and work out of the box.
+
+</Step>
+
+<Step title="Start the platform">
+
+Launch the entire SGIVU stack with a single command:
+
+```bash
+chmod +x run.bash
+./run.bash --dev
+```
+
+This command will:
+- Pull all required Docker images
+- Start all microservices (auth, gateway, user, client, vehicle, purchase-sale)
+- Initialize databases (PostgreSQL, MySQL)
+- Start Redis for session management
+- Launch the ML service (FastAPI)
+- Start Eureka service discovery
+- Start the Config Server
+- Optionally start Zipkin for distributed tracing
+
+</Step>
+
+<Step title="Wait for services to start">
+
+The initial startup may take 2-5 minutes as services initialize and register with Eureka. Monitor the startup process:
+
+```bash
+docker compose -f docker-compose.dev.yml logs -f
+```
+
+You can also check service status:
+
+```bash
+docker compose -f docker-compose.dev.yml ps
+```
+
+</Step>
+
+<Step title="Access the services">
+
+Once all services are running, you can access them at the following URLs:
+
+| Service | URL | Description |
+|---------|-----|-------------|
+| **Gateway** | http://localhost:8080 | Main API gateway (BFF) |
+| **Auth** | http://localhost:9000 | Authentication service |
+| **Config** | http://localhost:8888 | Configuration server |
+| **Discovery** | http://localhost:8761 | Eureka service registry |
+| **User Service** | http://localhost:8081 | User management |
+| **Client Service** | http://localhost:8082 | Client management |
+| **Vehicle Service** | http://localhost:8083 | Vehicle inventory |
+| **Purchase-Sale** | http://localhost:8084 | Transaction management |
+| **ML Service** | http://localhost:8000 | Machine learning API |
+| **Zipkin** | http://localhost:9411 | Distributed tracing |
+| **Frontend** | http://localhost:4200 | Angular application |
+
+</Step>
+
+<Step title="Verify installation">
+
+Check that Eureka shows all registered services:
+
+```bash
+curl http://localhost:8761
+```
+
+Test the gateway health endpoint:
+
+```bash
+curl http://localhost:8080/actuator/health
+```
+
+</Step>
+
+</Steps>
+
+## Stopping the Platform
+
+To stop all services:
+
+```bash
+docker compose -f docker-compose.dev.yml down
+```
+
+To stop and remove all data (including databases):
+
+```bash
+docker compose -f docker-compose.dev.yml down -v
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation" icon="download" href="/getting-started/installation">
+    Learn about detailed installation options and prerequisites
+  </Card>
+  <Card title="Configuration" icon="gear" href="/getting-started/configuration">
+    Explore configuration options and environment variables
+  </Card>
+  <Card title="Docker Deployment" icon="docker" href="/getting-started/docker-deployment">
+    Understand the Docker Compose architecture
+  </Card>
+  <Card title="Architecture" icon="sitemap" href="/architecture/overview">
+    Dive into SGIVU's microservices architecture
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+### Port conflicts
+
+If you see port conflict errors, ensure no other services are using the required ports (8080, 9000, 8888, 8761, etc.):
+
+```bash
+lsof -i :8080
+```
+
+### Services not starting
+
+Check the logs for specific services:
+
+```bash
+docker compose -f docker-compose.dev.yml logs sgivu-gateway
+docker compose -f docker-compose.dev.yml logs sgivu-auth
+```
+
+### Config Server issues
+
+If services can't connect to the Config Server, verify it's running:
+
+```bash
+docker compose -f docker-compose.dev.yml ps sgivu-config
+curl http://localhost:8888/actuator/health
+```
+
+### Database connection issues
+
+Ensure PostgreSQL and MySQL are healthy:
+
+```bash
+docker compose -f docker-compose.dev.yml ps sgivu-postgres
+docker compose -f docker-compose.dev.yml ps sgivu-mysql
+```

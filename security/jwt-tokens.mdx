@@ -1,0 +1,638 @@
+---
+title: JWT Tokens
+description: JWT structure, validation, and lifecycle management in SGIVU microservices
+---
+
+## Overview
+
+SGIVU uses **JSON Web Tokens (JWT)** as the access token format for all API authentication. The `sgivu-auth` service issues JWTs signed with RSA-256, and all microservices validate them using the auth server's public key.
+
+<Note>
+JWTs are **stateless** - microservices can validate tokens without calling the auth server on every request, improving performance and reducing coupling.
+</Note>
+
+## JWT Structure
+
+### Header
+
+The JWT header specifies the algorithm and key ID:
+
+```json
+{
+  "alg": "RS256",
+  "typ": "JWT",
+  "kid": "sgivu-jwt-key"
+}
+```
+
+- **alg**: RSA-SHA256 signature algorithm
+- **typ**: Token type (always "JWT")
+- **kid**: Key ID for rotation support (matches keystore alias)
+
+### Access Token Payload
+
+The access token contains custom claims for authorization:
+
+```json
+{
+  "sub": "12345",
+  "username": "john.doe",
+  "rolesAndPermissions": [
+    "ROLE_ADMIN",
+    "ROLE_USER",
+    "user:read",
+    "user:write",
+    "vehicle:read",
+    "vehicle:create"
+  ],
+  "isAdmin": true,
+  "iss": "http://localhost:9000",
+  "aud": "sgivu-gateway",
+  "exp": 1709654400,
+  "iat": 1709652600,
+  "jti": "a1b2c3d4-e5f6-7890"
+}
+```
+
+#### Standard Claims
+
+| Claim | Description | Example |
+|-------|-------------|----------|
+| `sub` | Subject (User ID) | `"12345"` |
+| `iss` | Issuer (Auth Server URL) | `"http://localhost:9000"` |
+| `aud` | Audience (Client ID) | `"sgivu-gateway"` |
+| `exp` | Expiration Time (Unix timestamp) | `1709654400` |
+| `iat` | Issued At (Unix timestamp) | `1709652600` |
+| `jti` | JWT ID (unique identifier) | `"a1b2c3d4..."` |
+
+#### Custom Claims
+
+| Claim | Type | Description |
+|-------|------|-------------|
+| `username` | String | Login username (for display) |
+| `rolesAndPermissions` | Array[String] | Combined roles and permissions |
+| `isAdmin` | Boolean | Quick admin check (true if has ROLE_ADMIN) |
+
+<Info>
+**Why is `sub` the User ID, not username?**
+
+The `sub` claim should be **immutable**. Usernames can change, but user IDs remain constant throughout the user's lifecycle. This prevents token invalidation when usernames are updated.
+</Info>
+
+### Roles and Permissions Format
+
+The `rolesAndPermissions` claim combines:
+
+1. **Roles**: Prefixed with `ROLE_` (e.g., `ROLE_ADMIN`, `ROLE_USER`)
+2. **Permissions**: Resource:action format (e.g., `user:read`, `vehicle:create`)
+
+**JWT Customizer Logic:**
+
+```java
+@Bean
+OAuth2TokenCustomizer<JwtEncodingContext> jwtCustomizer(UserDetailsService userDetailsService) {
+  return context -> {
+    Authentication principal = context.getPrincipal();
+    String username = principal.getName();
+    CustomUserDetails userDetails = 
+        (CustomUserDetails) userDetailsService.loadUserByUsername(username);
+    
+    Set<String> rolesAndPermissions = principal.getAuthorities().stream()
+      .map(GrantedAuthority::getAuthority)
+      .map(authority -> {
+        // Add ROLE_ prefix if not already present
+        if (authority.matches("^[A-Z_]+$")) {
+          return "ROLE_" + authority;
+        }
+        return authority;
+      })
+      .collect(Collectors.toSet());
+    
+    if (context.getTokenType().equals(OAuth2TokenType.ACCESS_TOKEN)) {
+      context.getClaims()
+        .claim("sub", userDetails.getId())
+        .claim("username", username)
+        .claim("rolesAndPermissions", rolesAndPermissions)
+        .claim("isAdmin", rolesAndPermissions.contains("ROLE_ADMIN"));
+    }
+  };
+}
+```
+
+### ID Token Payload
+
+The OIDC ID token has a different structure (used for user info, not API access):
+
+```json
+{
+  "sub": "12345",
+  "userId": 12345,
+  "iss": "http://localhost:9000",
+  "aud": "sgivu-gateway",
+  "exp": 1712246400,  // 30 days
+  "iat": 1709652600
+}
+```
+
+<Warning>
+The ID token has a **30-day TTL** (matching refresh token lifetime) because it's used as `id_token_hint` during OIDC logout. Spring Security never refreshes the ID token, so it must remain valid for the entire session.
+</Warning>
+
+## Token Signing
+
+### RSA Key Pair
+
+The auth server signs JWTs with an RSA private key stored in a JKS keystore:
+
+```java
+@Bean
+JWKSource<SecurityContext> jwkSource() {
+  Resource resource = resourceLoader.getResource(jwtProperties.keyStore().location());
+  KeyStore keyStore = KeyStore.getInstance("JKS");
+  keyStore.load(resource.getInputStream(), jwtProperties.keyStore().password().toCharArray());
+  
+  RSAPrivateKey privateKey = (RSAPrivateKey) keyStore.getKey(
+      jwtProperties.key().alias(), 
+      jwtProperties.key().password().toCharArray());
+  
+  Certificate certificate = keyStore.getCertificate(jwtProperties.key().alias());
+  RSAPublicKey publicKey = (RSAPublicKey) certificate.getPublicKey();
+  
+  RSAKey rsaKey = new RSAKey.Builder(publicKey)
+      .privateKey(privateKey)
+      .keyID(jwtProperties.key().alias())
+      .build();
+  
+  JWKSet jwkSet = new JWKSet(rsaKey);
+  return new ImmutableJWKSet<>(jwkSet);
+}
+```
+
+### Keystore Configuration
+
+**application.yml:**
+
+```yaml
+sgivu:
+  jwt:
+    keystore:
+      location: classpath:keystore.jks
+      password: ${KEYSTORE_PASSWORD}
+    key:
+      alias: sgivu-jwt-key
+      password: ${KEY_PASSWORD}
+```
+
+**Security Best Practices:**
+
+<Warning>
+1. **Never commit `keystore.jks` to Git** - add to `.gitignore`
+2. **Use environment variables** for passwords in production
+3. **Load from secret manager** (AWS Secrets Manager, HashiCorp Vault)
+4. **Rotate keys periodically** using the `kid` header for versioning
+</Warning>
+
+### Public Key Distribution (JWKS)
+
+The auth server exposes the public key via the JWKS endpoint:
+
+**Request:**
+```bash
+curl http://localhost:9000/oauth2/jwks
+```
+
+**Response:**
+```json
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "e": "AQAB",
+      "kid": "sgivu-jwt-key",
+      "n": "xGOr-H7A..."
+    }
+  ]
+}
+```
+
+Microservices fetch this public key to validate JWT signatures.
+
+## Token Validation
+
+### Microservice Configuration
+
+All microservices validate JWTs as OAuth2 Resource Servers:
+
+```java
+@Bean
+JwtDecoder jwtDecoder() {
+  return NimbusJwtDecoder.withIssuerLocation(
+      servicesProperties.getMap().get("sgivu-auth").getUrl())
+    .build();
+}
+```
+
+This decoder:
+
+1. **Fetches OIDC metadata** from `/.well-known/openid-configuration`
+2. **Retrieves JWKS** from `/oauth2/jwks`
+3. **Caches public keys** locally
+4. **Validates signature** using RSA-256
+5. **Checks standard claims**: `iss`, `aud`, `exp`, `nbf`
+
+### Validation Steps
+
+For each incoming request with `Authorization: Bearer <token>`:
+
+```mermaid
+graph TD
+    A[Receive JWT] --> B{Parse Header}
+    B --> C{Extract kid}
+    C --> D{Find Public Key in Cache}
+    D -->|Not Found| E[Fetch JWKS from Auth Server]
+    E --> F[Cache Public Key]
+    D -->|Found| F
+    F --> G{Verify Signature}
+    G -->|Invalid| H[401 Unauthorized]
+    G -->|Valid| I{Check exp claim}
+    I -->|Expired| H
+    I -->|Valid| J{Check iss claim}
+    J -->|Mismatch| H
+    J -->|Match| K{Check aud claim}
+    K -->|Mismatch| H
+    K -->|Match| L[Extract Claims]
+    L --> M[Create Authentication]
+    M --> N[Allow Request]
+```
+
+### Spring Security Integration
+
+**Resource Server Configuration:**
+
+```java
+@Bean
+SecurityFilterChain securityFilterChain(HttpSecurity http) throws Exception {
+  http
+    .oauth2ResourceServer(oauth2 -> oauth2
+      .jwt(jwt -> jwt.jwtAuthenticationConverter(convert()))
+    )
+    .authorizeHttpRequests(authz -> authz
+      .requestMatchers("/v1/cars/**").access(internalOrAuthenticatedAuthorizationManager())
+      .anyRequest().authenticated()
+    );
+  return http.build();
+}
+```
+
+**JWT to GrantedAuthority Conversion:**
+
+```java
+@Bean
+JwtAuthenticationConverter convert() {
+  JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
+  
+  converter.setJwtGrantedAuthoritiesConverter(jwt -> {
+    List<String> rolesAndPermissions = jwt.getClaimAsStringList("rolesAndPermissions");
+    
+    if (rolesAndPermissions == null || rolesAndPermissions.isEmpty()) {
+      return List.of();
+    }
+    
+    return rolesAndPermissions.stream()
+      .map(SimpleGrantedAuthority::new)
+      .collect(Collectors.toList());
+  });
+  
+  return converter;
+}
+```
+
+This extracts `rolesAndPermissions` and converts them to Spring Security's `GrantedAuthority` for use with `@PreAuthorize`.
+
+## Token Lifecycle
+
+### Token Timeouts
+
+| Token Type | TTL | Rotation |
+|------------|-----|----------|
+| Access Token | 30 minutes | No (expires and is replaced) |
+| Refresh Token | 30 days | Yes (new token issued on refresh) |
+| ID Token | 30 days | No (never refreshed) |
+
+**Configured in `ClientRegistrationRunner`:**
+
+```java
+private TokenSettings tokenSettings() {
+  return TokenSettings.builder()
+    .accessTokenTimeToLive(Duration.ofMinutes(30))
+    .refreshTokenTimeToLive(Duration.ofDays(30))
+    .reuseRefreshTokens(false)  // Rotation enabled
+    .build();
+}
+```
+
+### Token Refresh
+
+The gateway automatically refreshes expired access tokens using the refresh token:
+
+```java
+@Bean
+ReactiveOAuth2AuthorizedClientManager authorizedClientManager(...) {
+  RefreshTokenReactiveOAuth2AuthorizedClientProvider refreshTokenProvider =
+      new RefreshTokenReactiveOAuth2AuthorizedClientProvider();
+  refreshTokenProvider.setClockSkew(Duration.ofSeconds(5));
+  
+  DelegatingReactiveOAuth2AuthorizedClientProvider authorizedClientProvider =
+      new DelegatingReactiveOAuth2AuthorizedClientProvider(
+        authorizationCodeProvider, 
+        refreshTokenProvider
+      );
+  
+  DefaultReactiveOAuth2AuthorizedClientManager manager =
+      new DefaultReactiveOAuth2AuthorizedClientManager(
+        clientRegistrationRepository, 
+        authorizedClientRepository
+      );
+  manager.setAuthorizedClientProvider(authorizedClientProvider);
+  
+  return manager;
+}
+```
+
+**Refresh Flow:**
+
+```mermaid
+sequenceDiagram
+    participant Gateway
+    participant Redis
+    participant Auth
+    participant Service
+    
+    Gateway->>Redis: Load session
+    Redis-->>Gateway: OAuth2AuthorizedClient (access_token expired)
+    Gateway->>Gateway: Check access_token.expiresAt
+    
+    Note over Gateway: Access token expired
+    Gateway->>Auth: POST /oauth2/token<br/>grant_type=refresh_token<br/>refresh_token=...
+    Auth->>Auth: Validate refresh_token
+    Auth-->>Gateway: New access_token + new refresh_token
+    
+    Gateway->>Redis: Update session with new tokens
+    Gateway->>Service: Forward request with new access_token
+    Service-->>Gateway: Response
+    Gateway-->>Client: Response
+```
+
+### Refresh Token Rotation
+
+With `reuseRefreshTokens: false`, each refresh issues a **new refresh token** and invalidates the old one:
+
+**Benefits:**
+- **Limits token lifetime**: Even if stolen, old refresh tokens become invalid
+- **Detects token theft**: Reuse of old refresh token triggers revocation
+- **Reduces attack window**: Attacker must use token before legitimate refresh
+
+### Invalid Grant Handling
+
+When the refresh token is rejected (`invalid_grant` error):
+
+```java
+return authorizedClientManager
+  .authorize(authorizeRequest)
+  .onErrorResume(ClientAuthorizationException.class, ex -> {
+    if (OAuth2ErrorCodes.INVALID_GRANT.equals(ex.getError().getErrorCode())) {
+      log.warn("Refresh token invalid, re-authentication required");
+      return Mono.empty();  // Results in 401
+    }
+    return Mono.error(ex);
+  });
+```
+
+**Common Causes:**
+- Refresh token expired (30 days)
+- Token revoked (user logged out)
+- Auth server restarted (authorizations table cleared in dev)
+- Token rotation detected reuse (security incident)
+
+**Result:**
+- `/auth/session` returns `401`
+- Angular redirects to login
+- User re-authenticates
+
+## Token Extraction
+
+### From Authorization Header
+
+Microservices extract JWTs from the `Authorization` header:
+
+```http
+GET /v1/vehicles HTTP/1.1
+Host: sgivu-vehicle:8082
+Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NSIsInVzZXJuYW1lIjoiam9obi5kb2UiLCJyb2xlc0FuZFBlcm1pc3Npb25zIjpbIlJPTEVfQURNSU4iXSwiaXNBZG1pbiI6dHJ1ZSwiaXNzIjoiaHR0cDovL2xvY2FsaG9zdDo5MDAwIiwiYXVkIjoic2dpdnUtZ2F0ZXdheSIsImV4cCI6MTcwOTY1NDQwMCwiaWF0IjoxNzA5NjUyNjAwfQ.signature
+```
+
+Spring Security's `BearerTokenAuthenticationFilter` automatically:
+
+1. Extracts token from `Bearer` scheme
+2. Passes to `JwtDecoder` for validation
+3. Creates `JwtAuthenticationToken` with claims
+4. Stores in `SecurityContext`
+
+### Accessing Claims in Code
+
+**In Controllers:**
+
+```java
+@GetMapping("/profile")
+public ResponseEntity<UserProfile> getProfile(JwtAuthenticationToken authentication) {
+  Jwt jwt = authentication.getToken();
+  
+  Long userId = jwt.getClaim("sub");
+  String username = jwt.getClaim("username");
+  Boolean isAdmin = jwt.getClaim("isAdmin");
+  List<String> rolesAndPermissions = jwt.getClaim("rolesAndPermissions");
+  
+  return ResponseEntity.ok(new UserProfile(userId, username, isAdmin));
+}
+```
+
+**Using SecurityContext:**
+
+```java
+Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+if (auth instanceof JwtAuthenticationToken jwtAuth) {
+  Long userId = jwtAuth.getToken().getClaim("sub");
+}
+```
+
+## Authorization with JWT Claims
+
+### Method-Level Security
+
+Use `@PreAuthorize` with Spring Expression Language (SpEL):
+
+```java
+@PreAuthorize("hasAuthority('vehicle:read')")
+@GetMapping("/v1/vehicles/{id}")
+public VehicleResponse getVehicle(@PathVariable Long id) {
+  return vehicleService.findById(id);
+}
+
+@PreAuthorize("hasAuthority('vehicle:create') and hasRole('ADMIN')")
+@PostMapping("/v1/vehicles")
+public VehicleResponse createVehicle(@RequestBody VehicleRequest request) {
+  return vehicleService.create(request);
+}
+```
+
+**Enable Method Security:**
+
+```java
+@Configuration
+@EnableMethodSecurity
+public class SecurityConfig { ... }
+```
+
+### Custom Authorization Expressions
+
+Check claims directly:
+
+```java
+@PreAuthorize("authentication.token.claims['isAdmin'] == true")
+@DeleteMapping("/v1/users/{id}")
+public void deleteUser(@PathVariable Long id) {
+  userService.delete(id);
+}
+```
+
+### Route-Level Security
+
+Configure in security filter chain:
+
+```java
+http.authorizeHttpRequests(authz -> authz
+  .requestMatchers("/v1/vehicles/**").hasAnyAuthority("vehicle:read", "ROLE_ADMIN")
+  .requestMatchers("/v1/users/**").hasAuthority("user:read")
+  .anyRequest().authenticated()
+)
+```
+
+## Gateway Token Relay
+
+The gateway adds tokens to proxied requests using the `tokenRelay()` filter:
+
+**Route Configuration:**
+
+```java
+.route("vehicle-service", r -> r
+  .path("/v1/vehicles/**")
+  .filters(f -> f.tokenRelay())
+  .uri("lb://sgivu-vehicle")
+)
+```
+
+**How it works:**
+
+1. Extract `OAuth2AuthorizedClient` from Redis session
+2. Get `accessToken` from authorized client
+3. Check if expired → refresh if needed
+4. Add `Authorization: Bearer <token>` header
+5. Forward to microservice
+
+## Token Revocation
+
+The gateway revokes tokens during logout:
+
+```java
+public class TokenRevocationServerLogoutHandler implements ServerLogoutHandler {
+  @Override
+  public Mono<Void> logout(WebFilterExchange exchange, Authentication authentication) {
+    return exchange.getExchange().getSession()
+      .flatMap(session -> {
+        // Get authorized client from session
+        return authorizedClientRepository.loadAuthorizedClient(
+          registrationId, authentication, exchange.getExchange()
+        );
+      })
+      .flatMap(authorizedClient -> {
+        // Revoke access token
+        revokeToken(authorizedClient.getAccessToken());
+        // Revoke refresh token
+        revokeToken(authorizedClient.getRefreshToken());
+        return Mono.empty();
+      });
+  }
+}
+```
+
+**Revocation Endpoint:**
+
+```http
+POST /oauth2/revoke HTTP/1.1
+Host: sgivu-auth:9000
+Content-Type: application/x-www-form-urlencoded
+Authorization: Basic c2dpdnUtZ2F0ZXdheTpzZWNyZXQ=
+
+token=eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+## Production Considerations
+
+### Token Size
+
+JWTs are included in **every request**. Minimize size by:
+
+- Avoid embedding large objects in claims
+- Use claim names efficiently (short but readable)
+- Consider token compression (not standard)
+
+**Current SGIVU Token Size:** ~500-800 bytes (acceptable)
+
+### Clock Skew
+
+Allow 5-second clock skew for expiration checks:
+
+```java
+refreshTokenProvider.setClockSkew(Duration.ofSeconds(5));
+```
+
+Prevents tokens from being rejected due to minor time differences between servers.
+
+### Issuer URL Consistency
+
+<Warning>
+The `iss` claim in JWTs **must exactly match** the issuer URL configured in microservices. Mismatches cause validation failures.
+
+**Auth Server:**
+```yaml
+sgivu:
+  issuer:
+    url: https://api.example.com
+```
+
+**Microservices:**
+```java
+NimbusJwtDecoder.withIssuerLocation("https://api.example.com").build()
+```
+
+Both must use the same protocol (HTTP vs HTTPS) and hostname.
+</Warning>
+
+### Key Rotation
+
+**Recommended Process:**
+
+1. Generate new RSA key pair with new `kid` (e.g., `sgivu-jwt-key-2024`)
+2. Add to keystore alongside old key
+3. Update `sgivu.jwt.key.alias` to new `kid`
+4. Auth server starts signing with new key
+5. Old key remains in JWKS for 30 days (max refresh token lifetime)
+6. Remove old key after 30 days
+
+**Why 30 days?** Tokens signed with the old key remain valid until they expire. Microservices need the old public key to validate them.
+
+## Related Documentation
+
+- [OAuth2 & OIDC](/security/oauth2-oidc) - Token issuance and authorization flows
+- [BFF Pattern](/security/bff-pattern) - How the gateway manages tokens
+- [Service Communication](/security/service-communication) - Internal service authentication (non-JWT)

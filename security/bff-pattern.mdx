@@ -1,0 +1,514 @@
+---
+title: Backend for Frontend (BFF) Pattern
+description: How sgivu-gateway implements the BFF pattern to securely manage OAuth2 tokens for the Angular SPA
+---
+
+## Overview
+
+The **sgivu-gateway** acts as a **Backend for Frontend (BFF)** for the Angular application. Instead of storing OAuth2 tokens in the browser (vulnerable to XSS attacks), the gateway stores them server-side in Redis and exposes only an HTTP-only session cookie to the SPA.
+
+<Note>
+The BFF pattern is the recommended approach for SPAs in OAuth2/OIDC architectures, as recommended by the OAuth 2.0 for Browser-Based Apps (RFC draft).
+</Note>
+
+## Architecture
+
+```mermaid
+graph TB
+    User[User Browser]
+    Angular[Angular SPA]
+    Gateway[sgivu-gateway<br/>BFF]
+    Auth[sgivu-auth<br/>Authorization Server]
+    Redis[(Redis<br/>Session Store)]
+    Services[Microservices<br/>user, vehicle, etc.]
+    
+    User -->|HTTPS| Angular
+    Angular -->|SESSION cookie| Gateway
+    Gateway -->|OAuth2 flow| Auth
+    Gateway -->|Store tokens| Redis
+    Gateway -->|Bearer token| Services
+    
+    style Gateway fill:#4CAF50,color:#fff
+    style Redis fill:#DC382D,color:#fff
+```
+
+### Key Components
+
+1. **Angular SPA**: Never sees access/refresh tokens, only session cookie
+2. **Gateway (BFF)**: Manages OAuth2 flow, stores tokens in Redis, relays tokens to microservices
+3. **Redis**: Stores HTTP sessions containing OAuth2 tokens
+4. **Auth Server**: Issues tokens, validates credentials
+5. **Microservices**: Receive Bearer tokens from gateway, validate JWTs
+
+## Why BFF for SPAs?
+
+### Security Problems with Browser Storage
+
+<Warning>
+**Do NOT store tokens in browser:**
+- **localStorage/sessionStorage**: Vulnerable to XSS (any script can read)
+- **Browser memory**: Lost on refresh, complex state management
+- **Cookies without HttpOnly**: Readable by JavaScript (XSS risk)
+</Warning>
+
+### BFF Pattern Benefits
+
+✅ **XSS Protection**: Tokens never exposed to JavaScript  
+✅ **CSRF Protection**: `HttpOnly` + `SameSite=Lax` cookies  
+✅ **Token Rotation**: Automatic refresh token rotation  
+✅ **Centralized Token Management**: Single source of truth for session state  
+✅ **Simplified SPA**: Angular doesn't handle OAuth2 complexity  
+
+## Session Cookie Configuration
+
+The gateway uses Spring Session with Redis to persist sessions:
+
+### Cookie Settings
+
+```java
+@Bean
+WebSessionIdResolver webSessionIdResolver() {
+  CookieWebSessionIdResolver resolver = new CookieWebSessionIdResolver();
+  resolver.setCookieName("SESSION");
+  resolver.addCookieInitializer(builder -> {
+    builder.path("/");
+    builder.httpOnly(true);      // Cannot be read by JavaScript
+    builder.sameSite("Lax");     // CSRF protection
+    // No maxAge: session cookie (browser deletes on close)
+  });
+  return resolver;
+}
+```
+
+**Cookie Properties:**
+- **Name**: `SESSION`
+- **HttpOnly**: `true` (XSS protection)
+- **SameSite**: `Lax` (allows OAuth2 redirects)
+- **Secure**: Set `true` in production (HTTPS only)
+- **Path**: `/` (available to all gateway routes)
+- **MaxAge**: Not set (session cookie, expires when browser closes)
+
+### Why No MaxAge?
+
+<Info>
+The cookie does **not** define `maxAge`, making it a **session cookie** that browsers delete on close. The actual session lifetime is controlled by Redis TTL with **sliding expiration** (resets on each request).
+
+If `maxAge` were set (e.g., 1 hour), the browser would delete the cookie exactly 1 hour after login, even if the user is active and the Redis session is still valid (sliding timeout). This causes premature logouts.
+</Info>
+
+## Redis Session Storage
+
+Redis is used **exclusively** in `sgivu-gateway` for session persistence:
+
+### Configuration
+
+```yaml
+spring:
+  session:
+    store-type: redis
+    redis:
+      namespace: spring:session:sgivu-gateway
+    timeout: 30m  # Sliding timeout (resets on activity)
+  data:
+    redis:
+      host: ${REDIS_HOST:sgivu-redis}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
+```
+
+### Session Contents
+
+Each Redis session stores:
+- **OAuth2AuthorizedClient**: Contains `access_token`, `refresh_token`, `id_token`
+- **SecurityContext**: User authentication (OidcUser or JwtAuthenticationToken)
+- **Session metadata**: Creation time, last access time, expiration
+
+**Redis Key Example:**
+```
+spring:session:sgivu-gateway:sessions:a1b2c3d4-e5f6-7890-abcd-ef1234567890
+```
+
+### Horizontal Scaling
+
+Redis enables **stateless gateway instances**:
+
+- Multiple gateway pods/containers share the same Redis
+- Sessions are available to all instances (no sticky sessions needed)
+- Load balancers can route requests to any gateway instance
+
+## OAuth2 Client Configuration
+
+The gateway acts as an **OAuth2 Client** using Spring Security's `oauth2Login()`:
+
+```java
+http.oauth2Login(oauth2 -> oauth2
+  .authorizationRequestResolver(authorizationRequestResolver)
+  .authorizedClientRepository(authorizedClientRepository)
+  .authenticationSuccessHandler(authenticationSuccessHandler())
+)
+```
+
+### Authorized Client Repository
+
+Tokens are stored in the web session (backed by Redis):
+
+```java
+@Bean
+ServerOAuth2AuthorizedClientRepository authorizedClientRepository() {
+  return new WebSessionServerOAuth2AuthorizedClientRepository();
+}
+```
+
+This repository:
+1. Retrieves the `WebSession` from the exchange
+2. Stores `OAuth2AuthorizedClient` (containing tokens) as a session attribute
+3. Persists the session to Redis automatically
+
+## BFF Authentication Flow
+
+### Initial Login
+
+```mermaid
+sequenceDiagram
+    participant Angular
+    participant Gateway
+    participant Redis
+    participant Auth
+    
+    Angular->>Gateway: GET /auth/session
+    Gateway-->>Angular: 401 Unauthorized (no session)
+    
+    Angular->>User: Redirect to /oauth2/authorization/sgivu-gateway
+    Gateway->>Auth: Authorization Code flow (PKCE)
+    Auth->>User: Login form
+    User->>Auth: username + password
+    
+    Auth-->>Gateway: authorization_code
+    Gateway->>Auth: Exchange code for tokens
+    Auth-->>Gateway: access_token + refresh_token + id_token
+    
+    Gateway->>Redis: Create session, store tokens
+    Gateway-->>Angular: Set-Cookie: SESSION=abc123; HttpOnly
+    Gateway-->>Angular: Redirect to /callback
+    
+    Angular->>Gateway: GET /auth/session (with SESSION cookie)
+    Gateway->>Redis: Load session
+    Redis-->>Gateway: OAuth2AuthorizedClient (tokens)
+    Gateway->>Gateway: Decode JWT claims
+    Gateway-->>Angular: {authenticated: true, username: "john", roles: [...]}
+```
+
+### Subsequent Requests
+
+```mermaid
+sequenceDiagram
+    participant Angular
+    participant Gateway
+    participant Redis
+    participant Service
+    
+    Angular->>Gateway: GET /v1/vehicles (with SESSION cookie)
+    Gateway->>Redis: Load session
+    Redis-->>Gateway: OAuth2AuthorizedClient
+    
+    alt Access token valid
+        Gateway->>Service: GET /v1/vehicles<br/>Authorization: Bearer <access_token>
+        Service-->>Gateway: Vehicle data
+        Gateway-->>Angular: Vehicle data
+    else Access token expired
+        Gateway->>Auth: POST /oauth2/token<br/>(refresh_token grant)
+        Auth-->>Gateway: New access_token
+        Gateway->>Redis: Update session with new token
+        Gateway->>Service: GET /v1/vehicles<br/>Authorization: Bearer <new_token>
+        Service-->>Gateway: Vehicle data
+        Gateway-->>Angular: Vehicle data
+    end
+```
+
+## The /auth/session Endpoint
+
+The BFF exposes a single endpoint for the SPA to check authentication status:
+
+```typescript
+// Angular service
+getSession(): Observable<AuthSession> {
+  return this.http.get<AuthSession>('/auth/session', {
+    withCredentials: true  // Include SESSION cookie
+  });
+}
+```
+
+**Response when authenticated:**
+```json
+{
+  "authenticated": true,
+  "subject": "12345",
+  "username": "john.doe",
+  "rolesAndPermissions": ["ROLE_ADMIN", "user:read"],
+  "isAdmin": true
+}
+```
+
+**Response when not authenticated:**
+```
+HTTP 401 Unauthorized
+```
+
+### Implementation
+
+The `AuthSessionController` retrieves tokens from the session and decodes the JWT:
+
+```java
+@Override
+public Mono<ResponseEntity<AuthSessionResponse>> session(
+    Authentication authentication, ServerWebExchange exchange) {
+  
+  if (authentication instanceof OAuth2AuthenticationToken oauth2Token) {
+    OAuth2AuthorizeRequest authorizeRequest =
+        OAuth2AuthorizeRequest.withClientRegistrationId(registrationId)
+          .principal(oauth2Token)
+          .attribute(ServerWebExchange.class.getName(), exchange)
+          .build();
+    
+    return authorizedClientManager.authorize(authorizeRequest)
+      .flatMap(client -> {
+        // Decode JWT and extract claims
+        return jwtDecoder.decode(client.getAccessToken().getTokenValue())
+          .map(this::fromJwt);
+      })
+      .map(ResponseEntity::ok)
+      .switchIfEmpty(Mono.just(ResponseEntity.status(401).build()));
+  }
+  
+  return Mono.just(ResponseEntity.status(401).build());
+}
+```
+
+<Info>
+The call to `authorizedClientManager.authorize()` automatically triggers token refresh if the access token is expired. Angular never needs to handle token refresh logic.
+</Info>
+
+## Token Relay to Microservices
+
+The gateway uses the **Token Relay** filter to forward the access token to backend services:
+
+### Route Configuration
+
+```java
+@Bean
+RouteLocator gatewayRoutes(RouteLocatorBuilder builder) {
+  return builder.routes()
+    .route("vehicle-service", r -> r
+      .path("/v1/vehicles/**")
+      .filters(f -> f
+        .tokenRelay()  // Extracts token from session, adds Authorization header
+        .circuitBreaker(config -> config.setName("vehicle-service"))
+      )
+      .uri("lb://sgivu-vehicle")
+    )
+    .build();
+}
+```
+
+### How Token Relay Works
+
+1. **Extract Session**: Get `WebSession` from the exchange
+2. **Retrieve Authorized Client**: Load `OAuth2AuthorizedClient` from session
+3. **Check Expiration**: If access token expired, refresh it automatically
+4. **Add Header**: Set `Authorization: Bearer <access_token>` on proxied request
+5. **Forward Request**: Send to microservice
+
+**Microservice Perspective:**
+```http
+GET /v1/vehicles HTTP/1.1
+Host: sgivu-vehicle:8082
+Authorization: Bearer eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...
+```
+
+The microservice validates the JWT using the auth server's public key (JWKS).
+
+## Automatic Token Refresh
+
+The gateway automatically refreshes expired access tokens using the refresh token:
+
+```java
+@Bean
+ReactiveOAuth2AuthorizedClientManager authorizedClientManager(...) {
+  RefreshTokenReactiveOAuth2AuthorizedClientProvider refreshTokenProvider =
+      new RefreshTokenReactiveOAuth2AuthorizedClientProvider();
+  refreshTokenProvider.setClockSkew(Duration.ofSeconds(5));
+  
+  return authorizeRequest -> authorizedClientManager
+    .authorize(authorizeRequest)
+    .onErrorResume(ClientAuthorizationException.class, ex -> {
+      if (OAuth2ErrorCodes.INVALID_GRANT.equals(ex.getError().getErrorCode())) {
+        // Refresh token invalid -> return empty -> triggers 401
+        log.warn("Refresh token invalid, re-authentication required");
+        return Mono.empty();
+      }
+      return Mono.error(ex);
+    });
+}
+```
+
+### Refresh Failure Handling
+
+When the refresh token is invalid (`invalid_grant` error):
+
+1. `authorizedClientManager.authorize()` returns `Mono.empty()`
+2. `/auth/session` returns `401 Unauthorized`
+3. Token relay filter skips adding `Authorization` header
+4. Microservices return `401` for missing token
+5. Angular detects `401` and redirects to login
+
+**Common Causes of `invalid_grant`:**
+- Auth server restarted (authorizations lost)
+- Refresh token expired (30 days)
+- Token revoked (user logged out elsewhere)
+- Database cleared (development)
+
+## Logout Flow
+
+The BFF implements a **3-step logout** process:
+
+```java
+logout.logoutHandler(
+  new DelegatingServerLogoutHandler(
+    tokenRevocationLogoutHandler,     // 1. Revoke tokens
+    new SecurityContextServerLogoutHandler(),  // 2. Clear security context
+    sessionInvalidationHandler        // 3. Invalidate Redis session
+  )
+)
+.logoutSuccessHandler(logoutSuccessHandler(clientRegistrationRepository));
+```
+
+### Step-by-Step
+
+```mermaid
+sequenceDiagram
+    participant Angular
+    participant Gateway
+    participant Redis
+    participant Auth
+    
+    Angular->>Gateway: GET /logout (with SESSION cookie)
+    
+    Note over Gateway: 1. Token Revocation Handler
+    Gateway->>Redis: Load session
+    Redis-->>Gateway: OAuth2AuthorizedClient (tokens)
+    Gateway->>Auth: POST /oauth2/revoke<br/>token=<access_token>
+    Gateway->>Auth: POST /oauth2/revoke<br/>token=<refresh_token>
+    
+    Note over Gateway: 2. Security Context Handler
+    Gateway->>Gateway: Clear SecurityContext
+    
+    Note over Gateway: 3. Session Invalidation Handler
+    Gateway->>Redis: DELETE session
+    
+    Note over Gateway: 4. OIDC Logout Success Handler
+    Gateway-->>Angular: Redirect to Auth Server<br/>/logout?id_token_hint=...&post_logout_redirect_uri=.../login
+    
+    Auth->>Auth: Invalidate AUTH_SESSION
+    Auth-->>Angular: Redirect to /login
+```
+
+### Logout Success Handler
+
+The handler uses **OIDC RP-Initiated Logout** when possible:
+
+```java
+@Bean
+ServerLogoutSuccessHandler logoutSuccessHandler(...) {
+  OidcClientInitiatedServerLogoutSuccessHandler handler =
+      new OidcClientInitiatedServerLogoutSuccessHandler(clientRegistrationRepository);
+  handler.setPostLogoutRedirectUri(angularUrl + "/login");
+  
+  // Fallback for expired sessions (no OidcUser available)
+  String ssoLogoutFallbackUrl = authUrl + "/sso-logout?redirect_uri=" 
+      + URLEncoder.encode(angularUrl + "/login", StandardCharsets.UTF_8);
+  handler.setLogoutSuccessUrl(URI.create(ssoLogoutFallbackUrl));
+  
+  return handler;
+}
+```
+
+**Two scenarios:**
+
+1. **Session valid**: Uses OIDC `end_session_endpoint` with `id_token_hint`
+2. **Session expired**: Falls back to `/sso-logout` endpoint (custom logout handler)
+
+## Security Considerations
+
+### CORS Configuration
+
+The gateway allows only the Angular origin:
+
+```java
+@Bean
+CorsConfigurationSource corsConfigurationSource() {
+  CorsConfiguration config = new CorsConfiguration();
+  config.setAllowedOrigins(List.of(angularClientProperties.getUrl()));
+  config.setAllowedMethods(Arrays.asList("GET", "POST", "PUT", "DELETE"));
+  config.setAllowCredentials(true);  // Required for cookies
+  return source;
+}
+```
+
+<Warning>
+`allowCredentials: true` requires exact origin (cannot use wildcard `*`). This is necessary for the browser to send the `SESSION` cookie with cross-origin requests.
+</Warning>
+
+### CSRF Protection
+
+CSRF is disabled because:
+
+1. **HttpOnly cookies**: JavaScript cannot read/send cookies
+2. **SameSite=Lax**: Cookies not sent on cross-site POST requests
+3. **CORS restrictions**: Only Angular origin allowed
+4. **No state-changing GET**: All mutations use POST/PUT/DELETE
+
+```java
+http.csrf(ServerHttpSecurity.CsrfSpec::disable)
+```
+
+### Session Fixation Protection
+
+Spring Session automatically regenerates session IDs after authentication, preventing session fixation attacks.
+
+## Production Deployment
+
+### Environment Variables
+
+```bash
+# Redis (required)
+REDIS_HOST=redis.internal.example.com
+REDIS_PORT=6379
+REDIS_PASSWORD=<strong-password>
+
+# Session timeout (optional, default 30m)
+SPRING_SESSION_TIMEOUT=30m
+
+# OAuth2 client secret
+GATEWAY_CLIENT_SECRET=<strong-random-secret>
+```
+
+### Redis Configuration
+
+**Production recommendations:**
+- Use **Redis Cluster** or **AWS ElastiCache** for high availability
+- Enable **TLS encryption** for Redis connections
+- Set **maxmemory-policy**: `allkeys-lru` (evict old sessions)
+- Use **persistent storage** (AOF or RDB) for session recovery
+
+### Scaling Considerations
+
+- **Gateway Instances**: Scale horizontally (stateless with Redis)
+- **Redis**: Use cluster mode for multi-AZ deployment
+- **Session Timeout**: Balance security (shorter) vs UX (longer)
+- **Token Refresh**: Happens automatically, no manual intervention
+
+## Related Documentation
+
+- [OAuth2 & OIDC](/security/oauth2-oidc) - Authorization server configuration
+- [JWT Tokens](/security/jwt-tokens) - Token structure and validation
+- [Service Communication](/security/service-communication) - Internal service authentication

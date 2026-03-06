@@ -1,0 +1,268 @@
+---
+title: Authorization Server
+description: OAuth2 and OpenID Connect authentication service
+---
+
+## Overview
+
+`sgivu-auth` is the Authorization Server implementing OAuth2 and OpenID Connect standards. It issues JWT tokens signed with a JKS keystore, manages OAuth2 clients, authorizes users, and persists sessions and authorizations in PostgreSQL.
+
+## Technologies
+
+- **Java**: 21
+- **Spring Boot**: 4.0.1
+- **Spring Authorization Server**: OAuth2 / OIDC
+- **Spring Security**: Authentication and authorization
+- **Spring Cloud Config**: Client
+- **Eureka Client**: Service registration
+- **Spring Data JPA**: PostgreSQL persistence
+- **Flyway**: Database migrations
+- **Spring Session**: JDBC-based sessions
+- **Spring Boot Actuator**: Health monitoring
+- **Micrometer Tracing**: Zipkin integration
+- **SpringDoc OpenAPI**: API documentation
+
+## Port Configuration
+
+- **Default Port**: 9000
+- **Actuator**: `/actuator/health`, `/actuator/info`
+
+## Prerequisites
+
+- JDK 21
+- Maven 3.9+
+- Docker & docker-compose
+- PostgreSQL database
+- `sgivu-config` and `sgivu-discovery` services running
+
+## Endpoints
+
+### OpenID Connect / OAuth2
+
+<ResponseField name="/.well-known/openid-configuration" type="GET">
+  OIDC discovery endpoint exposing issuer metadata
+</ResponseField>
+
+<ResponseField name="/oauth2/authorize" type="GET">
+  OAuth2 authorization endpoint for PKCE flow
+</ResponseField>
+
+<ResponseField name="/oauth2/token" type="POST">
+  Token endpoint for exchanging authorization codes for access tokens
+</ResponseField>
+
+<ResponseField name="/oauth2/jwks" type="GET">
+  JSON Web Key Set for JWT signature verification
+</ResponseField>
+
+<ResponseField name="/login" type="GET">
+  Login page for user authentication
+</ResponseField>
+
+## Running the Service
+
+### Development with Docker Compose
+
+```bash
+cd infra/compose/sgivu-docker-compose
+docker compose -f docker-compose.dev.yml up -d
+```
+
+### Local Execution
+
+```bash
+./mvnw clean package
+./mvnw spring-boot:run
+```
+
+### Docker Build
+
+```bash
+./build-image.bash
+docker build -t stevenrq/sgivu-auth:v1 .
+docker run --env-file infra/compose/sgivu-docker-compose/.env -p 9000:9000 stevenrq/sgivu-auth:v1
+```
+
+## Security Configuration
+
+### JWT Keystore
+
+The service uses a JKS keystore to sign JWT tokens:
+
+- **Location**: Configured via `sgivu.jwt.keystore.location`
+- **Password**: Configured via `sgivu.jwt.keystore.password`
+- **Important**: The `keystore.jks` file is in `.gitignore` and must be provided via secret manager or CI/CD pipeline
+
+<Warning>
+Never commit `keystore.jks` to version control. Use environment variables or secret managers in production.
+</Warning>
+
+### Default OAuth2 Clients
+
+On startup, `ClientRegistrationRunner` registers these clients:
+
+| Client ID | Secret | Usage |
+|-----------|--------|-------|
+| `sgivu-gateway` | `gateway-client.secret` | API Gateway authentication |
+| `postman-client` | `postman-secret` | API testing with Postman |
+| `oauth2-debugger-client` | `oauth2-debugger-secret` | OAuth2 debugging tools |
+
+<Warning>
+Default client secrets are NOT secure for production. Rotate secrets before deploying to production.
+</Warning>
+
+### Internal Service Communication
+
+The service validates credentials by calling the User Service:
+
+- Uses `CredentialsValidationService` to verify username/password
+- Requires `SERVICE_INTERNAL_SECRET_KEY` header for internal API calls
+- Implemented in `JpaUserDetailsService`
+
+## Database Schema
+
+### Flyway Migrations
+
+Location: `src/main/resources/db/migration`
+
+**V1__initial_schema.sql** creates:
+
+- `clients`: OAuth2 client registrations
+- `authorizations`: Issued authorization codes and tokens
+- `authorization_consents`: User consent records
+- `SPRING_SESSION`: Session management tables (Spring Session JDBC)
+
+### Configuration
+
+Database connection configured in `sgivu-config-repo/sgivu-auth-*.yml`:
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+```
+
+## Observability
+
+### Actuator Endpoints
+
+- `/actuator/health`: Service health status
+- `/actuator/info`: Application information
+- Additional endpoints exposed based on active profile (dev exposes more)
+
+### Distributed Tracing
+
+**Zipkin Integration**:
+- Endpoint: `http://sgivu-zipkin:9411/api/v2/spans`
+- Key spans in:
+  - `CredentialsValidationService`: User credential validation
+  - `JpaUserDetailsService`: User details loading
+
+## Production Deployment
+
+### Nginx Configuration
+
+In production, Nginx routes these paths to `sgivu-auth`:
+- `/oauth2/*`
+- `/login`
+- `/.well-known/*`
+
+### Issuer URL Configuration
+
+<Warning>
+Ensure `ISSUER_URL` environment variable matches the hostname exposed to clients:
+
+```bash
+ISSUER_URL=https://your-domain.com
+```
+
+Mismatch between issuer in JWT and actual URL will cause authentication failures.
+</Warning>
+
+## Testing
+
+```bash
+./mvnw test
+```
+
+Tests verify:
+- OAuth2 authorization flow
+- JWT token generation and validation
+- Client registration
+- Session management
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Issuer mismatch errors">
+    **Problem**: JWT issuer doesn't match the URL clients are using.
+    
+    **Solution**: Verify `ISSUER_URL` environment variable matches the actual URL (including Nginx proxy hostname).
+  </Accordion>
+  
+  <Accordion title="Keystore missing">
+    **Problem**: Application fails to start with keystore error.
+    
+    **Solution**: 
+    - Ensure `keystore.jks` is available at runtime
+    - Verify `sgivu.jwt.keystore.location` points to correct path
+    - Check `sgivu.jwt.keystore.password` is correct
+  </Accordion>
+  
+  <Accordion title="User service unreachable">
+    **Problem**: `CredentialsValidationService` fails during login.
+    
+    **Solution**:
+    - Verify network connectivity to sgivu-user service
+    - Check `SERVICE_INTERNAL_SECRET_KEY` is configured correctly
+    - Ensure sgivu-user is registered in Eureka
+  </Accordion>
+  
+  <Accordion title="Session persistence issues">
+    **Problem**: Users are logged out unexpectedly.
+    
+    **Solution**:
+    - Verify PostgreSQL connection for Spring Session tables
+    - Check `SPRING_SESSION` table exists and is accessible
+    - Review session timeout configuration
+  </Accordion>
+</AccordionGroup>
+
+## Configuration Reference
+
+### Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|----------|
+| `PORT` | Server port | `9000` |
+| `ISSUER_URL` | OAuth2 issuer URL | `https://api.sgivu.com` |
+| `DB_HOST` | PostgreSQL host | `sgivu-postgres-auth` |
+| `DB_PORT` | PostgreSQL port | `5432` |
+| `DB_NAME` | Database name | `sgivu_auth` |
+| `DB_USERNAME` | Database username | `sgivu_user` |
+| `DB_PASSWORD` | Database password | `secure_password` |
+| `SERVICE_INTERNAL_SECRET_KEY` | Internal API key | `secret-key-value` |
+| `sgivu.jwt.keystore.location` | Keystore file path | `classpath:keystore.jks` |
+| `sgivu.jwt.keystore.password` | Keystore password | `keystore-password` |
+
+## Related Services
+
+<CardGroup cols={2}>
+  <Card title="Gateway" icon="shield" href="/services/gateway">
+    OAuth2 client configuration and token relay
+  </Card>
+  <Card title="User Service" icon="users" href="/services/user">
+    User credentials validation endpoint
+  </Card>
+  <Card title="Config Server" icon="gear" href="/services/config">
+    Centralized configuration management
+  </Card>
+  <Card title="Discovery" icon="compass" href="/services/discovery">
+    Service registration and discovery
+  </Card>
+</CardGroup>

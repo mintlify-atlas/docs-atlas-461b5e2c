@@ -1,0 +1,358 @@
+---
+title: API Gateway
+description: Backend-for-Frontend and routing layer with Spring Cloud Gateway
+---
+
+## Overview
+
+`sgivu-gateway` is the API Gateway and Backend-for-Frontend (BFF) for the SGIVU ecosystem. Built with Spring Cloud Gateway (WebFlux), it serves as:
+
+- **BFF** for the SPA, providing `/auth/session` and authentication flows
+- **Proxy and Router** for all business APIs (`/v1/*`) with security, circuit breakers, route rewriting, and fallbacks
+
+## Technologies
+
+- **Java**: 21
+- **Spring Boot**: 3.5.8
+- **Spring Cloud Gateway**: WebFlux-based routing
+- **Spring Security**: OAuth2 client + Resource Server
+- **Spring Session**: Redis-based session management
+- **Resilience4j**: Circuit breaker pattern
+- **Micrometer Tracing**: Zipkin integration
+- **SpringDoc OpenAPI**: Swagger UI aggregation
+- **Lombok**: Code generation
+
+## Port Configuration
+
+- **Default Port**: 8080 (configurable via `PORT` or config server)
+
+## Prerequisites
+
+- JDK 21
+- Maven 3.9+
+- Docker & docker-compose
+- **Redis**: Session storage (defined as `sgivu-redis` in docker-compose)
+- **Required Services**: `sgivu-config`, `sgivu-discovery`, `sgivu-auth`
+
+## Endpoints
+
+### BFF Endpoints
+
+<ResponseField name="GET /auth/session" type="public">
+  Returns current session information: subject, username, roles, isAdmin
+</ResponseField>
+
+### Proxied Routes
+
+<ResponseField name="/docs/<service>/..." type="public">
+  Aggregated Swagger documentation from microservices
+</ResponseField>
+
+<ResponseField name="/v1/*" type="protected">
+  Business APIs requiring authentication and authorization
+  - Token relay enabled
+  - Circuit breaker with fallback
+  - Automatic service discovery via Eureka
+</ResponseField>
+
+<ResponseField name="GET /fallback/*" type="public">
+  Fallback endpoints when downstream services fail
+</ResponseField>
+
+<ResponseField name="GET /actuator/health" type="public">
+  Gateway health status
+</ResponseField>
+
+## Running the Service
+
+### Development with Docker Compose
+
+```bash
+cd infra/compose/sgivu-docker-compose
+docker compose -f docker-compose.dev.yml up -d
+```
+
+### Local Execution
+
+```bash
+./mvnw clean package
+./mvnw spring-boot:run
+```
+
+### Docker Build
+
+```bash
+./build-image.bash
+docker build -t stevenrq/sgivu-gateway:v1 .
+docker run -p 8080:8080 --env-file infra/compose/sgivu-docker-compose/.env stevenrq/sgivu-gateway:v1
+```
+
+## Routing Configuration
+
+### Documentation Routes
+
+Pattern: `/docs/<service>/...`
+
+- Rewrites paths and proxies to microservice Swagger endpoints
+- Public access (no authentication required)
+- Example: `/docs/user/v3/api-docs` → `http://sgivu-user/v3/api-docs`
+
+### API Routes
+
+Pattern: `/v1/*`
+
+**Applied Filters**:
+1. **TokenRelay**: Forwards OAuth2 token to downstream services
+2. **CircuitBreaker**: Resilience4j circuit breaker with fallback
+3. **Service Discovery**: Resolves services via Eureka
+
+**Protected Endpoints**:
+- `/v1/users/**`
+- `/v1/persons/**`
+- `/v1/companies/**`
+- `/v1/vehicles/**`
+- `/v1/purchase-sales/**`
+- `/v1/ml/**`
+
+### ML Service Routing
+
+Routes to Python ML service: `http://sgivu-ml:8000`
+
+## Global Filters
+
+### ZipkinTracingGlobalFilter
+
+**Purpose**: Distributed tracing integration
+
+**Actions**:
+- Creates spans for each request
+- Adds `X-Trace-Id` header for trace correlation
+- Tags spans with HTTP status and duration
+
+### AddUserIdHeaderGlobalFilter
+
+**Purpose**: User context propagation
+
+**Actions**:
+- Extracts subject/claim from JWT token
+- Adds `X-User-ID` header to downstream requests
+- Enables user tracking in microservices
+
+## Security Configuration
+
+### OAuth2 Client
+
+Gateway acts as OAuth2 client for login flows:
+
+- **Authorization Flow**: PKCE (Proof Key for Code Exchange)
+- **Client Registration**: Configured in `sgivu-config-repo/sgivu-gateway.yml`
+- **Provider**: Points to `sgivu-auth` issuer
+
+### Resource Server
+
+Validates JWT tokens for API routes:
+
+- **Issuer**: `sgivu-auth` OpenID configuration
+- **JWKS Endpoint**: Used for signature verification
+- **Token Relay**: Forwards validated token to downstream services
+
+### Public Routes
+
+No authentication required:
+- `/docs/**`
+- `/v3/api-docs/**`
+- `/swagger-ui/**`
+- `/oauth2/**`
+- `/login/**`
+- `/auth/session`
+- `/fallback/**`
+
+### Protected Routes
+
+Require valid JWT token:
+- All `/v1/**` endpoints
+
+### CORS Configuration
+
+<Info>
+Review CORS settings in `SecurityConfig` to match your frontend origin:
+
+```java
+.cors(cors -> cors.configurationSource(request -> {
+    CorsConfiguration config = new CorsConfiguration();
+    config.setAllowedOrigins(List.of("http://localhost:3000"));
+    config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE"));
+    config.setAllowedHeaders(List.of("*"));
+    config.setAllowCredentials(true);
+    return config;
+}))
+```
+</Info>
+
+## Circuit Breaker
+
+### Configuration
+
+Each API route includes Resilience4j circuit breaker:
+
+```yaml
+filters:
+  - TokenRelay=
+  - CircuitBreaker=serviceCircuitBreaker,forward:/fallback/service
+```
+
+### Fallback Behavior
+
+When a service is unavailable:
+1. Circuit breaker opens after threshold failures
+2. Request routes to `/fallback/<service>`
+3. Returns graceful error response
+4. Circuit half-opens after timeout to test recovery
+
+## Session Management
+
+### Redis Configuration
+
+**Spring Session** stores sessions in Redis:
+
+```yaml
+spring:
+  session:
+    store-type: redis
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: 6379
+      password: ${REDIS_PASSWORD}
+```
+
+<Warning>
+Ensure Redis is accessible and configured with password authentication in production.
+</Warning>
+
+## Observability
+
+### Distributed Tracing
+
+**Zipkin Integration**:
+- Endpoint: Configured via config server
+- Header: `X-Trace-Id` added to all requests
+- Spans: Created for each gateway route
+
+**Brave Configuration**:
+```yaml
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  zipkin:
+    tracing:
+      endpoint: http://sgivu-zipkin:9411/api/v2/spans
+```
+
+### Health Checks
+
+```bash
+curl http://localhost:8080/actuator/health
+```
+
+Response includes:
+- Gateway status
+- Circuit breaker states
+- Downstream service availability
+
+## Testing
+
+```bash
+./mvnw test
+```
+
+**Recommended Integration Tests**:
+- Route and path rewriting (`/docs/*`)
+- Token relay propagation
+- Circuit breaker and fallback behavior
+- Global filter execution (X-Trace-Id, X-User-ID)
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="401/403 on API calls">
+    **Symptoms**: API requests return unauthorized or forbidden
+    
+    **Solutions**:
+    - Verify Bearer token is valid (check aud/issuer claims)
+    - Ensure `sgivu-auth` is operational and accessible
+    - Verify JWKS endpoint is reachable
+    - Check token hasn't expired
+  </Accordion>
+  
+  <Accordion title="Routing failures">
+    **Symptoms**: 503 Service Unavailable or routing errors
+    
+    **Solutions**:
+    - Verify services are registered in Eureka (`http://sgivu-discovery:8761`)
+    - Check `eureka.client.service-url.defaultZone` configuration
+    - Review service application names match route URIs
+    - Inspect gateway logs for route resolution errors
+  </Accordion>
+  
+  <Accordion title="Session issues">
+    **Symptoms**: Users logged out unexpectedly or session loss
+    
+    **Solutions**:
+    - Verify Redis is running and accessible
+    - Check `REDIS_HOST` and `REDIS_PASSWORD` environment variables
+    - Review Redis logs for connection errors
+    - Confirm session timeout configuration
+  </Accordion>
+  
+  <Accordion title="Circuit breaker always open">
+    **Symptoms**: All requests route to fallback endpoints
+    
+    **Solutions**:
+    - Check downstream service health
+    - Review circuit breaker configuration (threshold, timeout)
+    - Inspect service logs for errors
+    - Verify network connectivity between gateway and services
+  </Accordion>
+  
+  <Accordion title="CORS errors">
+    **Symptoms**: Browser blocks requests with CORS policy errors
+    
+    **Solutions**:
+    - Add frontend origin to `allowedOrigins` in SecurityConfig
+    - Verify `allowedMethods` includes required HTTP methods
+    - Check `allowCredentials` is set to `true` for cookie-based auth
+    - Review browser console for specific CORS error details
+  </Accordion>
+</AccordionGroup>
+
+## Configuration Reference
+
+### Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|----------|
+| `PORT` | Server port | `8080` |
+| `REDIS_HOST` | Redis host | `sgivu-redis` |
+| `REDIS_PASSWORD` | Redis password | `redis_password` |
+| `EUREKA_URL` | Eureka server URL | `http://sgivu-discovery:8761/eureka/` |
+| `spring.security.oauth2.client.registration.*` | OAuth2 client settings | Via config server |
+| `spring.security.oauth2.client.provider.*` | OAuth2 provider settings | Via config server |
+
+## Related Services
+
+<CardGroup cols={2}>
+  <Card title="Auth Server" icon="lock" href="/services/auth">
+    OAuth2 provider and JWT issuer
+  </Card>
+  <Card title="Discovery" icon="compass" href="/services/discovery">
+    Service registry for routing
+  </Card>
+  <Card title="Config Server" icon="gear" href="/services/config">
+    Centralized configuration
+  </Card>
+  <Card title="User Service" icon="users" href="/services/user">
+    User management APIs
+  </Card>
+</CardGroup>

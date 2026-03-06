@@ -1,0 +1,333 @@
+---
+title: 'OAuth2 & OpenID Connect'
+description: 'OAuth2 authorization and OIDC authentication endpoints'
+---
+
+## Overview
+
+The SGIVU Authorization Server (`sgivu-auth`) provides OAuth2 and OpenID Connect functionality. It issues signed JWT tokens using a JKS keystore and manages client registrations, user authorizations, and sessions.
+
+## Base URL
+
+```
+https://your-domain.com
+```
+
+In production, these endpoints are typically accessed through Nginx which routes OAuth2-related paths to the `sgivu-auth` service.
+
+---
+
+## OAuth2 Endpoints
+
+### Authorization Endpoint
+
+```http
+GET /oauth2/authorize
+```
+
+Initiates the OAuth2 authorization flow. Users are redirected here to grant authorization.
+
+<ParamField query="client_id" type="string" required>
+  The OAuth2 client identifier
+</ParamField>
+
+<ParamField query="redirect_uri" type="string" required>
+  The URI to redirect to after authorization
+</ParamField>
+
+<ParamField query="response_type" type="string" required>
+  The OAuth2 response type (typically `code`)
+</ParamField>
+
+<ParamField query="scope" type="string" required>
+  Space-separated list of requested scopes (e.g., `openid profile email`)
+</ParamField>
+
+<ParamField query="state" type="string">
+  Opaque value to maintain state between request and callback
+</ParamField>
+
+<ParamField query="code_challenge" type="string">
+  PKCE code challenge for public clients
+</ParamField>
+
+<ParamField query="code_challenge_method" type="string">
+  PKCE code challenge method (S256 or plain)
+</ParamField>
+
+#### Response
+
+Redirects to `redirect_uri` with authorization code:
+
+```
+HTTP/1.1 302 Found
+Location: {redirect_uri}?code={authorization_code}&state={state}
+```
+
+---
+
+### Token Endpoint
+
+```http
+POST /oauth2/token
+```
+
+Exchanges authorization code for access tokens or refreshes existing tokens.
+
+**Content-Type:** `application/x-www-form-urlencoded`
+
+**Authentication:** Client credentials via Basic Auth header or request body
+
+#### Authorization Code Grant
+
+<ParamField body="grant_type" type="string" required>
+  Must be `authorization_code`
+</ParamField>
+
+<ParamField body="code" type="string" required>
+  The authorization code received from the authorization endpoint
+</ParamField>
+
+<ParamField body="redirect_uri" type="string" required>
+  Must match the redirect_uri used in authorization request
+</ParamField>
+
+<ParamField body="client_id" type="string">
+  Required if not using Basic Auth
+</ParamField>
+
+<ParamField body="client_secret" type="string">
+  Required for confidential clients if not using Basic Auth
+</ParamField>
+
+<ParamField body="code_verifier" type="string">
+  PKCE code verifier for public clients
+</ParamField>
+
+#### Refresh Token Grant
+
+<ParamField body="grant_type" type="string" required>
+  Must be `refresh_token`
+</ParamField>
+
+<ParamField body="refresh_token" type="string" required>
+  The refresh token previously issued
+</ParamField>
+
+<ParamField body="scope" type="string">
+  Optional: requested scope (must be subset of original scope)
+</ParamField>
+
+#### Response
+
+<ResponseField name="access_token" type="string">
+  The JWT access token for accessing protected resources
+</ResponseField>
+
+<ResponseField name="token_type" type="string">
+  Always `Bearer`
+</ResponseField>
+
+<ResponseField name="expires_in" type="integer">
+  Token lifetime in seconds
+</ResponseField>
+
+<ResponseField name="refresh_token" type="string">
+  Refresh token for obtaining new access tokens
+</ResponseField>
+
+<ResponseField name="scope" type="string">
+  Space-separated list of granted scopes
+</ResponseField>
+
+```json
+{
+  "access_token": "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "refresh_token": "v1.MRxzFDdS3L5rWnZ...",
+  "scope": "openid profile email"
+}
+```
+
+#### Status Codes
+
+- `200 OK` - Token successfully issued
+- `400 Bad Request` - Invalid request parameters
+- `401 Unauthorized` - Invalid client credentials
+
+#### Example
+
+```bash
+curl -X POST https://your-domain.com/oauth2/token \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -u "client_id:client_secret" \
+  -d "grant_type=authorization_code" \
+  -d "code=SplxlOBeZQQYbYS6WxSbIA" \
+  -d "redirect_uri=https://client.example.com/callback"
+```
+
+---
+
+### JWKS Endpoint
+
+```http
+GET /oauth2/jwks
+```
+
+Publishes the JSON Web Key Set used to verify JWT signatures.
+
+**Authentication:** None (public endpoint)
+
+#### Response
+
+<ResponseField name="keys" type="array">
+  Array of JWK objects containing public keys
+</ResponseField>
+
+```json
+{
+  "keys": [
+    {
+      "kty": "RSA",
+      "e": "AQAB",
+      "use": "sig",
+      "kid": "sgivu-jwt-key",
+      "alg": "RS256",
+      "n": "xGOr-H7A..."
+    }
+  ]
+}
+```
+
+---
+
+## OpenID Connect Endpoints
+
+### Discovery Endpoint
+
+```http
+GET /.well-known/openid-configuration
+```
+
+Returns OpenID Connect discovery metadata.
+
+**Authentication:** None (public endpoint)
+
+#### Response
+
+<ResponseField name="issuer" type="string">
+  The issuer identifier URL
+</ResponseField>
+
+<ResponseField name="authorization_endpoint" type="string">
+  URL of the authorization endpoint
+</ResponseField>
+
+<ResponseField name="token_endpoint" type="string">
+  URL of the token endpoint
+</ResponseField>
+
+<ResponseField name="jwks_uri" type="string">
+  URL of the JWKS endpoint
+</ResponseField>
+
+<ResponseField name="response_types_supported" type="array">
+  Supported OAuth2 response types
+</ResponseField>
+
+<ResponseField name="grant_types_supported" type="array">
+  Supported OAuth2 grant types
+</ResponseField>
+
+<ResponseField name="subject_types_supported" type="array">
+  Supported subject identifier types
+</ResponseField>
+
+<ResponseField name="id_token_signing_alg_values_supported" type="array">
+  Supported signing algorithms for ID tokens
+</ResponseField>
+
+```json
+{
+  "issuer": "https://your-domain.com",
+  "authorization_endpoint": "https://your-domain.com/oauth2/authorize",
+  "token_endpoint": "https://your-domain.com/oauth2/token",
+  "jwks_uri": "https://your-domain.com/oauth2/jwks",
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "subject_types_supported": ["public"],
+  "id_token_signing_alg_values_supported": ["RS256"]
+}
+```
+
+---
+
+## Login Endpoint
+
+```http
+GET /login
+```
+
+Displays the login page for user authentication.
+
+**Authentication:** None (public endpoint)
+
+---
+
+## Security Considerations
+
+### JWT Signing
+
+- JWTs are signed using RSA keys from a JKS keystore
+- The keystore location and password are configured via `sgivu.jwt.keystore.location` and `sgivu.jwt.keystore.password`
+- **Never** commit keystore files to version control
+- Use a secret manager or secure pipeline to provide the keystore in production
+
+### Default Clients
+
+Three OAuth2 clients are registered by default:
+
+1. **sgivu-gateway** - Backend-for-Frontend (BFF) client
+   - Client ID: `sgivu-gateway`
+   - Secret: Configured via `gateway-client.secret`
+
+2. **postman-client** - For API testing
+   - Client ID: `postman-client`
+   - Secret: `postman-secret`
+
+3. **oauth2-debugger-client** - For OAuth2 debugging
+   - Client ID: `oauth2-debugger-client`
+   - Secret: `oauth2-debugger-secret`
+
+<Warning>
+  Default client secrets are **not secure** for production use. Always override them with strong, randomly generated secrets.
+</Warning>
+
+### Issuer Configuration
+
+- Configure `ISSUER_URL` to match the public hostname/URL
+- Issuer mismatch will cause token validation failures
+- Ensure consistency between authorization server and resource servers
+
+---
+
+## Error Responses
+
+OAuth2 errors follow the standard OAuth2 error response format:
+
+```json
+{
+  "error": "invalid_grant",
+  "error_description": "The provided authorization code is invalid or expired"
+}
+```
+
+### Common Error Codes
+
+- `invalid_request` - Missing or malformed parameters
+- `invalid_client` - Client authentication failed
+- `invalid_grant` - Invalid or expired authorization code
+- `unauthorized_client` - Client not authorized for this grant type
+- `unsupported_grant_type` - Grant type not supported
+- `invalid_scope` - Requested scope is invalid or exceeds granted scope

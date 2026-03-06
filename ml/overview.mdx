@@ -1,0 +1,340 @@
+---
+title: ML Service Overview
+description: Machine learning microservice for vehicle demand forecasting in SGIVU
+---
+
+## Introduction
+
+The **sgivu-ml** microservice provides machine learning capabilities for the SGIVU platform, focusing on demand forecasting for vehicle inventory segments. It exposes REST APIs for predictions, model metadata queries, and retraining operations.
+
+## Architecture
+
+The ML service follows a clean architecture pattern with clear separation of concerns:
+
+- **API Layer** (`app/api/`): FastAPI routers and request/response schemas
+- **Application Layer** (`app/application/services/`): Business logic orchestration
+- **Domain Layer** (`app/domain/`): Core entities, ports, and exceptions
+- **Infrastructure Layer** (`app/infrastructure/`): ML implementations, database, security
+
+### Key Components
+
+<CardGroup cols={2}>
+  <Card title="Prediction Service" icon="brain">
+    Orchestrates demand forecasting, handles model loading, and manages feature history
+  </Card>
+  <Card title="Training Service" icon="graduation-cap">
+    Coordinates model training pipeline from feature engineering to model persistence
+  </Card>
+  <Card title="Feature Engineering" icon="gear">
+    Transforms raw transactions into ML-ready features with time-series components
+  </Card>
+  <Card title="Model Registry" icon="database">
+    Manages model versioning, persistence, and metadata storage
+  </Card>
+</CardGroup>
+
+## Technology Stack
+
+### Core Framework
+- **Python 3.12**: Runtime environment
+- **FastAPI**: Modern web framework with automatic OpenAPI documentation
+- **Uvicorn**: ASGI server for production deployment
+- **Pydantic v2**: Data validation and settings management
+
+### Machine Learning
+- **scikit-learn**: Core ML algorithms and preprocessing pipelines
+- **XGBoost**: Gradient boosting for improved predictions
+- **pandas**: Data manipulation and time-series processing
+- **numpy**: Numerical computations
+- **joblib**: Model serialization
+
+### Data & Security
+- **SQLAlchemy 2.0**: Async ORM for PostgreSQL
+- **asyncpg**: Async PostgreSQL driver
+- **Authlib / PyJWT**: JWT token validation
+- **PostgreSQL**: Model artifacts, features, and prediction logs
+
+## How It Works
+
+### Prediction Workflow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant PredictionService
+    participant ModelRegistry
+    participant FeatureRepo
+    
+    Client->>API: POST /v1/ml/predict
+    API->>PredictionService: predict(filters, horizon)
+    PredictionService->>ModelRegistry: load_latest()
+    ModelRegistry-->>PredictionService: model + metadata
+    PredictionService->>FeatureRepo: load_segment_history()
+    FeatureRepo-->>PredictionService: historical features
+    PredictionService->>PredictionService: forecast(horizon)
+    PredictionService-->>API: PredictionResult
+    API-->>Client: JSON response
+```
+
+### Training Workflow
+
+```mermaid
+sequenceDiagram
+    participant API
+    participant TrainingService
+    participant FeatureEngineering
+    participant ModelTrainer
+    participant ModelRegistry
+    
+    API->>TrainingService: train(raw_df)
+    TrainingService->>FeatureEngineering: build_feature_table()
+    FeatureEngineering-->>TrainingService: feature dataset
+    TrainingService->>ModelTrainer: train_and_evaluate()
+    ModelTrainer->>ModelTrainer: Compare LinearRegression, RandomForest, XGBoost
+    ModelTrainer-->>TrainingService: best pipeline + metrics
+    TrainingService->>ModelRegistry: save(pipeline, metadata)
+    ModelRegistry-->>TrainingService: ModelMetadata
+```
+
+## Features
+
+### Demand Forecasting
+- Multi-horizon predictions (1-24 months)
+- Confidence intervals based on residual standard deviation
+- Segment-level forecasting (vehicle_type, brand, model, line)
+- Historical sales visualization
+
+### Model Management
+- Automatic model versioning with timestamps
+- Performance metrics tracking (RMSE, MAE, MAPE, R²)
+- Model comparison across multiple algorithms
+- Artifact persistence in PostgreSQL or filesystem
+
+### Feature Engineering
+- Time-series features: lags (1, 3, 6 months), rolling means
+- Business metrics: margin, inventory rotation, days in inventory
+- Temporal encoding: cyclical month representation (sin/cos)
+- Category normalization and brand/model canonicalization
+
+### Security
+- JWT token validation via OIDC discovery
+- Internal service authentication with `X-Internal-Service-Key`
+- Permission-based endpoint access control
+- Configurable authorization per operation
+
+## Deployment
+
+### Environment Variables
+
+Key configuration variables (see source for complete list):
+
+```bash
+# Application
+APP_NAME=sgivu-ml
+APP_VERSION=v1
+
+# Database
+DATABASE_URL=postgresql+asyncpg://user:pass@host/db
+DATABASE_AUTO_CREATE=true
+
+# Security
+SGIVU_AUTH_DISCOVERY_URL=https://auth.example.com/.well-known/openid-configuration
+INTERNAL_SERVICE_KEY=your-secret-key
+
+# ML Settings
+MODEL_DIR=./models
+TARGET_COLUMN=sales_count
+MIN_HISTORY_MONTHS=6
+```
+
+### Running the Service
+
+<CodeGroup>
+```bash Development
+# Install dependencies
+pip install -r requirements.txt
+
+# Run with auto-reload
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+```bash Docker
+# Build image
+./build-image.bash
+
+# Run container
+docker run --env-file .env -p 8000:8000 stevenrq/sgivu-ml:v1
+```
+
+```bash Production
+# Via gateway routing
+# /v1/ml/** → http://sgivu-ml:8000
+```
+</CodeGroup>
+
+## API Documentation
+
+Interactive API documentation is available at:
+- **Swagger UI**: `http://localhost:8000/docs`
+- **ReDoc**: `http://localhost:8000/redoc`
+
+See [Prediction API](/ml/prediction-api) for detailed endpoint documentation.
+
+## Data Pipeline
+
+### Input Data Requirements
+
+The service expects transaction data with:
+- **Vehicle attributes**: `vehicle_type`, `brand`, `model`, `line`
+- **Contract info**: `contract_type` (SALE/PURCHASE)
+- **Pricing**: `sale_price`, `purchase_price`
+- **Timestamps**: `created_at`, `updated_at`
+- **Vehicle ID**: For tracking inventory lifecycle
+
+### Feature Generation
+
+From raw transactions, the system generates:
+
+1. **Monthly aggregations** per segment
+2. **Business metrics**: average prices, margins, inventory rotation
+3. **Time-series lags**: 1, 3, 6-month historical sales
+4. **Rolling statistics**: 3 and 6-month moving averages
+5. **Temporal features**: month, year, cyclical encoding
+
+See the source at `app/infrastructure/ml/feature_engineering.py:46-141` for implementation details.
+
+## Model Training
+
+### Candidate Models
+
+The trainer evaluates three algorithms:
+
+<CodeGroup>
+```python Linear Regression
+LinearRegression()
+# Fast baseline model
+```
+
+```python Random Forest
+RandomForestRegressor(
+    n_estimators=300,
+    max_depth=15,
+    random_state=7
+)
+```
+
+```python XGBoost
+XGBRegressor(
+    n_estimators=500,
+    max_depth=6,
+    learning_rate=0.05,
+    subsample=0.9,
+    colsample_bytree=0.9,
+    objective="reg:squarederror",
+    random_state=7
+)
+```
+</CodeGroup>
+
+### Model Selection
+
+The best model is selected based on **RMSE** (Root Mean Squared Error) on the test set. All metrics (RMSE, MAE, MAPE, R²) are tracked for comparison.
+
+### Train/Test Split
+
+- **Time-based split**: 80% train, 20% test
+- Respects temporal ordering (no data leakage)
+- Minimum 6 months of history required (configurable)
+
+## Database Schema
+
+The service can persist data to PostgreSQL:
+
+### Tables
+
+| Table | Purpose |
+|-------|----------|
+| `ml_model_artifacts` | Serialized model pipelines and metadata |
+| `ml_training_features` | Feature snapshots for reproducibility |
+| `ml_predictions` | Prediction request/response logs |
+
+<Note>
+Database persistence is optional. The service can operate in file-only mode using `MODEL_DIR` for artifact storage.
+</Note>
+
+## Observability
+
+### Health Checks
+
+```bash
+curl http://localhost:8000/health
+# {"status": "ok", "version": "v1"}
+```
+
+### Logs
+
+The service uses Python's standard logging with structured messages:
+- Model training events with version and metrics
+- Prediction requests and warnings
+- Data loading and validation errors
+
+### Metrics
+
+Model performance metrics are stored with each version:
+- **RMSE**: Root mean squared error
+- **MAE**: Mean absolute error
+- **MAPE**: Mean absolute percentage error
+- **R²**: Coefficient of determination
+- **residual_std**: Standard deviation of residuals (for confidence intervals)
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="No model available error">
+    **Cause**: No trained model artifacts exist in `MODEL_DIR` or database.
+    
+    **Solution**: Run the training pipeline or trigger retraining via `/v1/ml/retrain`.
+  </Accordion>
+  
+  <Accordion title="Database connection errors">
+    **Cause**: Invalid `DATABASE_URL` or PostgreSQL is unreachable.
+    
+    **Solution**: Verify environment variables and network connectivity. Check that PostgreSQL is running and accepting connections.
+  </Accordion>
+  
+  <Accordion title="401/403 on prediction endpoints">
+    **Cause**: Invalid JWT token or missing `X-Internal-Service-Key` header.
+    
+    **Solution**: Ensure tokens are issued by the correct issuer and include required scopes. For internal calls, provide the shared service key.
+  </Accordion>
+  
+  <Accordion title="Segment not found error">
+    **Cause**: No historical data exists for the requested vehicle_type/brand/model/line combination.
+    
+    **Solution**: Verify the segment exists in training data. Check for typos in vehicle attributes. Retrain with data including this segment.
+  </Accordion>
+  
+  <Accordion title="Inconsistent predictions">
+    **Cause**: Input features are out-of-distribution or data quality issues.
+    
+    **Solution**: Review preprocessing and normalization rules. Retrain the model with recent data. Check for anomalies in sales patterns.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Prediction API" icon="code" href="/ml/prediction-api">
+    Explore API endpoints and request/response schemas
+  </Card>
+  <Card title="Training Process" icon="flask" href="/ml/training">
+    Learn about model training and feature engineering
+  </Card>
+  <Card title="Model Management" icon="layer-group" href="/ml/model-management">
+    Understand versioning and model lifecycle
+  </Card>
+  <Card title="Gateway Integration" icon="gateway" href="/gateway/overview">
+    See how the gateway routes requests to ML service
+  </Card>
+</CardGroup>

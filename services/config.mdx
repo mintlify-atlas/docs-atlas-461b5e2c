@@ -1,0 +1,382 @@
+---
+title: Config Server
+description: Centralized configuration management with Spring Cloud Config
+---
+
+## Overview
+
+`sgivu-config` is the central configuration server for the SGIVU ecosystem. Using Spring Cloud Config Server, it exposes centralized configuration from a Git repository or local filesystem (native mode), allowing microservices to retrieve properties based on application, profile, and label.
+
+## Technologies
+
+- **Java**: 21
+- **Spring Boot**: 3.5.8
+- **Spring Cloud Config Server**: 2025.x
+- **Spring Boot Actuator**: Health monitoring
+
+## Port Configuration
+
+- **Default Port**: 8888
+
+## Prerequisites
+
+- JDK 21
+- Maven 3.9+
+- Docker & docker-compose (optional)
+- Access to configuration repository: `https://github.com/stevenrq/sgivu-config-repo.git`
+  - Or local copy for native mode
+
+## Endpoints
+
+<ResponseField name="GET /{application}/{profile}" type="JSON">
+  Returns properties for specified application and profile
+  
+  **Example**: `GET /sgivu-auth/dev`
+</ResponseField>
+
+<ResponseField name="GET /{application}/{profile}/{label}" type="JSON">
+  Returns properties with specific label (Git branch)
+  
+  **Example**: `GET /sgivu-auth/prod/main`
+</ResponseField>
+
+<ResponseField name="GET /{application}-{profile}.yml" type="YAML">
+  Returns configuration file in YAML format
+  
+  **Example**: `GET /sgivu-auth-dev.yml`
+</ResponseField>
+
+<ResponseField name="GET /actuator/health" type="JSON">
+  Service health status
+</ResponseField>
+
+## Running the Service
+
+### Development with Docker Compose
+
+```bash
+cd infra/compose/sgivu-docker-compose
+docker compose -f docker-compose.dev.yml up -d
+```
+
+<Info>
+Development mode uses `native` profile with local repository mounted as volume.
+</Info>
+
+### Local Execution
+
+```bash
+./mvnw clean package
+./mvnw spring-boot:run
+```
+
+### Docker Build
+
+```bash
+./build-image.bash
+docker run -p 8888:8888 --env-file .env stevenrq/sgivu-config:v1
+```
+
+## Configuration Modes
+
+### Git Mode (Production)
+
+Default configuration in `src/main/resources/application.yml`:
+
+```yaml
+spring:
+  profiles:
+    active: git
+  cloud:
+    config:
+      server:
+        git:
+          uri: https://github.com/stevenrq/sgivu-config-repo.git
+          default-label: main
+          clone-on-start: true
+```
+
+**Features**:
+- Pulls configuration from remote Git repository
+- Supports branch selection via `label` parameter
+- Automatic updates when repository changes
+- Secure for production use
+
+### Native Mode (Development)
+
+Configured in docker-compose for local development:
+
+```yaml
+spring:
+  profiles:
+    active: native
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: file:///config-repo
+```
+
+**Features**:
+- Reads from local filesystem
+- Fast iteration during development
+- No network dependency
+- Mounted as Docker volume
+
+## Usage Examples
+
+### Fetch Configuration
+
+```bash
+# Get dev configuration for auth service
+curl http://localhost:8888/sgivu-auth/dev
+
+# Get prod configuration with specific branch
+curl http://localhost:8888/sgivu-gateway/prod/main
+
+# Get raw YAML file
+curl http://localhost:8888/sgivu-user-dev.yml
+```
+
+### Response Format
+
+```json
+{
+  "name": "sgivu-auth",
+  "profiles": ["dev"],
+  "label": "main",
+  "version": "abc123def456",
+  "state": null,
+  "propertySources": [
+    {
+      "name": "https://github.com/stevenrq/sgivu-config-repo.git/sgivu-auth-dev.yml",
+      "source": {
+        "server.port": 9000,
+        "spring.datasource.url": "jdbc:postgresql://...",
+        "...": "..."
+      }
+    }
+  ]
+}
+```
+
+## Client Configuration
+
+Microservices connect to config server using:
+
+```yaml
+spring:
+  application:
+    name: sgivu-auth
+  config:
+    import: optional:configserver:http://sgivu-config:8888
+  cloud:
+    config:
+      fail-fast: true
+      retry:
+        max-attempts: 6
+        initial-interval: 1000
+```
+
+<Warning>
+Set `fail-fast: true` in production to prevent services from starting with incorrect configuration.
+</Warning>
+
+## Security
+
+### Development
+
+- Uses `native` mode with local repository mount
+- No authentication required for internal network
+
+### Production
+
+- Uses Git mode with remote repository
+- Repository access controlled via Git credentials
+- Consider using private repository with authentication
+- Encrypt sensitive properties using Spring Cloud Config encryption
+
+### Sensitive Data
+
+<Warning>
+Never commit sensitive data directly to config repository:
+- Database passwords
+- API keys
+- OAuth2 client secrets
+- JWT keystore passwords
+
+Use environment variable placeholders: `${DB_PASSWORD}`
+</Warning>
+
+## Property Encryption
+
+Spring Cloud Config supports encrypted properties:
+
+```yaml
+# Encrypted property (example)
+spring:
+  datasource:
+    password: '{cipher}AQA4x8K8v...'
+```
+
+**Setup**:
+1. Configure encryption key
+2. Use `/encrypt` endpoint to encrypt values
+3. Store encrypted values in config files
+4. Config server decrypts before serving to clients
+
+## Observability
+
+### Health Check
+
+```bash
+curl http://localhost:8888/actuator/health
+```
+
+Response:
+```json
+{
+  "status": "UP",
+  "components": {
+    "diskSpace": {"status": "UP"},
+    "ping": {"status": "UP"}
+  }
+}
+```
+
+### Monitoring
+
+- Monitor `/actuator/health` for service availability
+- Track request metrics for configuration endpoint access
+- Enable additional actuator endpoints in dev profile
+
+## Testing
+
+```bash
+./mvnw test
+```
+
+**Recommended Tests**:
+- Verify Git repository connectivity
+- Test native mode with local files
+- Validate property parsing for each service
+- Test profile and label resolution
+
+## Refresh Configuration
+
+Clients can refresh configuration without restart:
+
+```bash
+# Trigger refresh on client service
+curl -X POST http://client-service:port/actuator/refresh
+```
+
+<Info>
+Requires `@RefreshScope` annotation on beans that should be refreshed.
+</Info>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Git URI inaccessible">
+    **Symptoms**: Config server fails to start or returns 500 errors
+    
+    **Solutions**:
+    - Verify `SPRING_CLOUD_CONFIG_SERVER_GIT_URI` environment variable
+    - Check network access to Git repository
+    - Verify Git credentials if using private repository
+    - Review config server logs for connection errors
+  </Accordion>
+  
+  <Accordion title="Changes not reflected">
+    **Symptoms**: Services still use old configuration values
+    
+    **Solutions**:
+    - Verify correct `label` (branch) is being used
+    - Add `/?label=branch-name` to request
+    - Restart config server to clear cache (native mode)
+    - Trigger `/actuator/refresh` on client services
+    - Check if using `@RefreshScope` on configuration beans
+  </Accordion>
+  
+  <Accordion title="Application not found">
+    **Symptoms**: Config server returns empty configuration
+    
+    **Solutions**:
+    - Verify file naming: `{application}-{profile}.yml`
+    - Check `spring.application.name` in client matches file name
+    - Ensure file exists in repository root or search-locations
+    - Review config server logs for file resolution
+  </Accordion>
+  
+  <Accordion title="Property resolution fails">
+    **Symptoms**: Clients fail to start with property binding errors
+    
+    **Solutions**:
+    - Validate YAML syntax in configuration files
+    - Check for missing environment variable placeholders
+    - Verify property types match expected values
+    - Test configuration endpoint directly: `/app/profile`
+  </Accordion>
+</AccordionGroup>
+
+## Configuration Repository Structure
+
+```
+sgivu-config-repo/
+├── application.yml          # Common properties for all services
+├── application-dev.yml      # Common dev properties
+├── application-prod.yml     # Common prod properties
+├── sgivu-auth-dev.yml      # Auth service dev config
+├── sgivu-auth-prod.yml     # Auth service prod config
+├── sgivu-gateway.yml       # Gateway common config
+├── sgivu-gateway-dev.yml   # Gateway dev config
+├── sgivu-user-dev.yml      # User service dev config
+├── sgivu-client-dev.yml    # Client service dev config
+├── sgivu-vehicle-dev.yml   # Vehicle service dev config
+└── ...
+```
+
+## Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|----------|
+| `PORT` | Server port | `8888` |
+| `SPRING_PROFILES_ACTIVE` | Active profile (git/native) | `git` |
+| `SPRING_CLOUD_CONFIG_SERVER_GIT_URI` | Git repository URL | GitHub repo |
+| `SPRING_CLOUD_CONFIG_SERVER_GIT_DEFAULT_LABEL` | Default branch | `main` |
+| `SPRING_CLOUD_CONFIG_SERVER_NATIVE_SEARCH_LOCATIONS` | Native mode path | `file:///config-repo` |
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Use Git Mode" icon="git">
+    Use Git mode in production for version control and audit trail
+  </Card>
+  <Card title="Encrypt Secrets" icon="shield">
+    Use Spring Cloud Config encryption for sensitive values
+  </Card>
+  <Card title="Environment Variables" icon="code">
+    Use placeholders for environment-specific values
+  </Card>
+  <Card title="Profile Hierarchy" icon="layer-group">
+    Use common files + profile-specific overrides
+  </Card>
+</CardGroup>
+
+## Related Services
+
+<CardGroup cols={2}>
+  <Card title="Discovery" icon="compass" href="/services/discovery">
+    Service registry and discovery
+  </Card>
+  <Card title="Gateway" icon="shield" href="/services/gateway">
+    API Gateway configuration
+  </Card>
+  <Card title="Auth" icon="lock" href="/services/auth">
+    Authorization server settings
+  </Card>
+  <Card title="All Services" icon="server" href="/services/overview">
+    Complete service overview
+  </Card>
+</CardGroup>

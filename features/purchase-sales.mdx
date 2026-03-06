@@ -1,0 +1,319 @@
+---
+title: Purchase & Sales Contracts
+description: Create and manage vehicle purchase and sale contracts
+---
+
+## Overview
+
+The Purchase & Sales module is where vehicle transactions are documented and managed. Create contracts for buying vehicles into your inventory or selling them to customers, track contract status, and generate comprehensive reports.
+
+## Contract Types
+
+SGIVU supports two types of contracts:
+
+<CardGroup cols={2}>
+  <Card title="Purchase Contracts" icon="cart-shopping">
+    Document the acquisition of vehicles into your inventory. Record details about purchasing vehicles from individuals or dealers.
+  </Card>
+  
+  <Card title="Sale Contracts" icon="hand-holding-dollar">
+    Document the sale of vehicles from your inventory to customers. Track customer purchases and transaction details.
+  </Card>
+</CardGroup>
+
+## Creating a Contract
+
+### Purchase Contract
+
+<Steps>
+  <Step title="Navigate to Contracts">
+    Access the Purchase & Sales section from your dashboard. You need the `purchase-sale:create` permission to create new contracts.
+  </Step>
+  
+  <Step title="Select Contract Type">
+    Choose "Purchase" to document acquiring a vehicle for your inventory.
+  </Step>
+  
+  <Step title="Select Vehicle">
+    Choose the vehicle from your inventory or create a new vehicle record if this is a new acquisition. The vehicle details will be linked to the contract.
+  </Step>
+  
+  <Step title="Select Client">
+    Search for and select the person or company you're purchasing the vehicle from. If they're not in your system, create a new client record first.
+  </Step>
+  
+  <Step title="Enter Transaction Details">
+    Fill in the contract information:
+    - **Purchase Price**: Amount you're paying for the vehicle
+    - **Purchase Date**: Date of transaction
+    - **Payment Method**: How the transaction will be settled
+    - **Terms and Conditions**: Any special terms or conditions
+    - **Notes**: Additional information about the purchase
+  </Step>
+  
+  <Step title="Set Contract Status">
+    Choose the current status:
+    - **Draft**: Contract is being prepared
+    - **Pending**: Awaiting approval or completion
+    - **Completed**: Transaction is finalized
+    - **Cancelled**: Contract was cancelled
+  </Step>
+  
+  <Step title="Assign Responsible User">
+    Select the user who is handling this transaction for accountability and follow-up.
+  </Step>
+  
+  <Step title="Save Contract">
+    Review all details and save the contract. The contract is now part of your transaction records.
+  </Step>
+</Steps>
+
+### Sale Contract
+
+<Steps>
+  <Step title="Start New Sale">
+    From the Purchase & Sales section, choose "Sale" to document selling a vehicle from your inventory.
+  </Step>
+  
+  <Step title="Select Vehicle from Inventory">
+    Choose the vehicle you're selling. Only vehicles marked as "Available" can be selected for sale contracts.
+  </Step>
+  
+  <Step title="Select Customer">
+    Search for and select the person or company purchasing the vehicle. Create a new client record if needed.
+  </Step>
+  
+  <Step title="Enter Sale Details">
+    Fill in the contract information:
+    - **Sale Price**: Amount the customer is paying
+    - **Sale Date**: Date of transaction
+    - **Payment Method**: Cash, financing, trade-in, etc.
+    - **Down Payment**: If applicable
+    - **Terms and Conditions**: Warranty, return policy, etc.
+    - **Notes**: Special arrangements or requirements
+  </Step>
+  
+  <Step title="Set Contract Status">
+    Track the sale progress:
+    - **Draft**: Preparing the sale agreement
+    - **Pending**: Awaiting signatures, payment, or paperwork
+    - **Completed**: Sale is finalized and vehicle delivered
+    - **Cancelled**: Sale fell through
+  </Step>
+  
+  <Step title="Assign Sales Representative">
+    Select the user responsible for this sale for commission tracking and follow-up.
+  </Step>
+  
+  <Step title="Complete Contract">
+    Review all information and save. The system updates the vehicle status based on the contract state.
+  </Step>
+</Steps>
+
+## Managing Contracts
+
+### Viewing Contract Details
+
+<Card title="Contract Summary" icon="file-contract">
+  Each contract displays comprehensive information including all parties involved, vehicle details, pricing, payment terms, status, and associated user. Access the contract detail page to view complete information.
+</Card>
+
+### Updating Contracts
+
+<Steps>
+  <Step title="Search for Contract">
+    Use the search and filter tools to locate the contract you want to update.
+  </Step>
+  
+  <Step title="Edit Contract">
+    Select the contract and choose edit. You need the `purchase-sale:update` permission to modify contracts.
+  </Step>
+  
+  <Step title="Update Information">
+    Modify any contract fields as needed. Common updates include status changes, payment information updates, or adding notes.
+  </Step>
+  
+  <Step title="Save Changes">
+    Review your changes and save. All modifications are logged with timestamp and user information.
+  </Step>
+</Steps>
+
+### Contract Status Workflow
+
+Contracts typically move through these statuses:
+
+<Steps>
+  <Step title="Draft">
+    Initial contract creation. All parties and terms are being determined.
+  </Step>
+  
+  <Step title="Pending">
+    Contract is awaiting signatures, payment processing, or paperwork completion.
+  </Step>
+  
+  <Step title="Completed">
+    Transaction is finalized. For sales, vehicle is delivered. For purchases, vehicle is added to inventory.
+  </Step>
+  
+  <Step title="Cancelled (if applicable)">
+    Transaction did not complete. Vehicle status is restored to previous state.
+  </Step>
+</Steps>
+
+## Searching Contracts
+
+SGIVU provides advanced search and filtering capabilities:
+
+<CardGroup cols={2}>
+  <Card title="By Contract Type" icon="list-check">
+    Filter to view only purchase or sale contracts.
+  </Card>
+  
+  <Card title="By Status" icon="circle-check">
+    View contracts by their current status (draft, pending, completed, cancelled).
+  </Card>
+  
+  <Card title="By Client" icon="user">
+    Find all contracts associated with a specific person or company.
+  </Card>
+  
+  <Card title="By Vehicle" icon="car">
+    View the transaction history for a specific vehicle.
+  </Card>
+  
+  <Card title="By Date Range" icon="calendar">
+    Filter contracts by creation date or transaction date.
+  </Card>
+  
+  <Card title="By User" icon="user-tie">
+    View contracts assigned to a specific sales representative or staff member.
+  </Card>
+</CardGroup>
+
+## Reports and Export
+
+Generate comprehensive reports from your contract data:
+
+### Report Formats
+
+<CardGroup cols={3}>
+  <Card title="PDF Reports" icon="file-pdf">
+    Generate formatted PDF documents suitable for printing and archiving. Perfect for official records.
+  </Card>
+  
+  <Card title="Excel Spreadsheets" icon="file-excel">
+    Export to XLSX format for data analysis, pivot tables, and integration with other tools.
+  </Card>
+  
+  <Card title="CSV Files" icon="file-csv">
+    Export to CSV for importing into other systems or database applications.
+  </Card>
+</CardGroup>
+
+### Report Types
+
+<AccordionGroup>
+  <Accordion title="Sales Summary Report">
+    Overview of all sales within a date range, including total revenue, number of vehicles sold, and sales by status.
+  </Accordion>
+  
+  <Accordion title="Purchase History Report">
+    Details of all vehicle acquisitions, including total spending and purchase sources.
+  </Accordion>
+  
+  <Accordion title="Client Transaction Report">
+    Complete transaction history for a specific client, showing all purchases and sales.
+  </Accordion>
+  
+  <Accordion title="User Performance Report">
+    Sales and purchase activity by user, useful for commission calculation and performance review.
+  </Accordion>
+  
+  <Accordion title="Contract Status Report">
+    Overview of contracts by status, helping identify pending transactions that need attention.
+  </Accordion>
+</AccordionGroup>
+
+### Generating Reports
+
+<Steps>
+  <Step title="Select Report Type">
+    Choose the type of report you want to generate from the Reports menu.
+  </Step>
+  
+  <Step title="Set Filters">
+    Apply filters to narrow down the data (date range, contract type, status, etc.).
+  </Step>
+  
+  <Step title="Choose Format">
+    Select your preferred export format: PDF, XLSX, or CSV.
+  </Step>
+  
+  <Step title="Generate and Download">
+    The system processes your request and generates the report. Download the file to your device.
+  </Step>
+</Steps>
+
+## Integration with Other Features
+
+### Vehicle Management
+
+<Card title="Automatic Status Updates" icon="sync">
+  When you create or update contracts, the system can automatically update vehicle availability status. Completed sale contracts mark vehicles as unavailable.
+</Card>
+
+### Client Management
+
+<Card title="Transaction History" icon="clock-rotate-left">
+  All contracts are linked to client records, providing a complete transaction history viewable from the client profile.
+</Card>
+
+### User Management
+
+<Card title="User Attribution" icon="user-check">
+  Each contract is assigned to a user, enabling performance tracking and accountability.
+</Card>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Regular Status Updates" icon="arrows-rotate">
+    Keep contract statuses current to maintain accurate inventory and reporting.
+  </Card>
+  
+  <Card title="Complete Documentation" icon="clipboard-list">
+    Fill in all contract fields thoroughly for complete records and easier reporting.
+  </Card>
+  
+  <Card title="Verify Information" icon="check-double">
+    Double-check client, vehicle, and pricing information before finalizing contracts.
+  </Card>
+  
+  <Card title="Use Notes Field" icon="note-sticky">
+    Document any special circumstances, verbal agreements, or follow-up requirements.
+  </Card>
+</CardGroup>
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Cannot create contract">
+    Verify you have the `purchase-sale:create` permission. Ensure the selected vehicle and client exist in the system.
+  </Accordion>
+  
+  <Accordion title="Vehicle not available for sale">
+    Only vehicles with "Available" status can be used in sale contracts. Update the vehicle status in Vehicle Management.
+  </Accordion>
+  
+  <Accordion title="Cannot update contract status">
+    Check you have the `purchase-sale:update` permission. Some status transitions may have validation rules.
+  </Accordion>
+  
+  <Accordion title="Report generation fails">
+    Large reports may take time to generate. Check your filters to ensure they're not too broad. If issues persist, try a smaller date range.
+  </Accordion>
+  
+  <Accordion title="Missing contract information">
+    Ensure all required fields were filled when the contract was created. Edit the contract to add missing information.
+  </Accordion>
+</AccordionGroup>

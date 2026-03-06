@@ -1,0 +1,518 @@
+---
+title: Client Service
+description: Client management for persons and companies
+---
+
+## Overview
+
+`sgivu-client` manages client information (persons and companies) within the SGIVU ecosystem. It provides CRUD operations, advanced search, and counters, exposing a REST API protected by roles and permissions issued by the Authorization Server (`sgivu-auth`).
+
+## Technologies
+
+- **Java**: 21
+- **Spring Boot**: 4.0.1
+- **Spring Security**: Resource Server (JWT validation)
+- **Spring Data JPA**: PostgreSQL persistence
+- **Flyway**: Database migrations in `src/main/resources/db/migration`
+- **Spring Boot Actuator**: Health monitoring
+- **Micrometer Tracing**: Zipkin integration
+- **SpringDoc OpenAPI**: API documentation
+- **MapStruct**: DTO mapping
+- **Lombok**: Code generation
+
+## Port Configuration
+
+- **Default Port**: 8082 (configurable via `PORT` or config server)
+
+## Prerequisites
+
+- JDK 21
+- Maven 3.9+
+- PostgreSQL database
+- `sgivu-config` and `sgivu-discovery` services running
+
+## Running the Service
+
+### Development with Docker Compose
+
+```bash
+cd infra/compose/sgivu-docker-compose
+docker compose -f docker-compose.dev.yml up -d
+```
+
+### Local Execution
+
+```bash
+./mvnw clean package
+./mvnw spring-boot:run
+```
+
+### Docker Build
+
+```bash
+docker build -t stevenrq/sgivu-client:v1 .
+```
+
+## Client Types
+
+### Person
+
+**Individual clients** with personal information:
+- First name, last name
+- Document number (national ID, passport, etc.)
+- Date of birth
+- Email, phone
+- Addresses
+
+### Company
+
+**Business clients** with corporate information:
+- Legal name
+- Tax ID (TIN/EIN)
+- Industry sector
+- Email, phone
+- Addresses
+
+## Security
+
+### Authentication
+
+**JWT Token Validation**:
+- `sgivu-client` acts as **Resource Server**
+- Validates tokens issued by `sgivu-auth`
+- Token signature verified via JWKS endpoint
+
+### Authorization
+
+**Required Permissions**:
+- `person:create` - Create person clients
+- `person:read` - View person clients
+- `person:update` - Update person clients
+- `person:delete` - Delete person clients
+- `company:create` - Create company clients
+- `company:read` - View company clients
+- `company:update` - Update company clients
+- `company:delete` - Delete company clients
+
+**Implementation**: `@PreAuthorize` annotations in `PersonController` and `CompanyController`
+
+<Info>
+Gateway or clients must send valid Bearer token with required authorities. Token must be issued by `sgivu-auth`.
+</Info>
+
+## Database Schema
+
+### Flyway Migrations
+
+**Location**: `src/main/resources/db/migration/V1__initial_schema.sql`
+
+**Tables Created**:
+
+<Tabs>
+  <Tab title="clients">
+    Base client table with discriminator:
+    - `id`: Primary key
+    - `client_type`: ENUM (PERSON, COMPANY)
+    - `email`, `phone`: Contact information
+    - `created_at`, `updated_at`: Audit timestamps
+  </Tab>
+  
+  <Tab title="persons">
+    Person-specific information:
+    - `client_id`: Foreign key to clients
+    - `first_name`, `last_name`
+    - `document_number`: Unique identifier
+    - `date_of_birth`
+  </Tab>
+  
+  <Tab title="companies">
+    Company-specific information:
+    - `client_id`: Foreign key to clients
+    - `legal_name`
+    - `tax_id`: Unique identifier
+    - `industry_sector`
+  </Tab>
+  
+  <Tab title="addresses">
+    Physical addresses:
+    - `id`: Primary key
+    - `client_id`: Foreign key to clients
+    - `street`, `city`, `state`, `country`
+    - `postal_code`
+    - `address_type`: ENUM (HOME, WORK, BILLING, SHIPPING)
+  </Tab>
+</Tabs>
+
+**Indexes**:
+- `persons.document_number` (unique)
+- `companies.tax_id` (unique)
+- `clients.email`
+- `addresses.client_id`
+
+### Configuration
+
+Database connection configured in `sgivu-config-repo/sgivu-client-*.yml`:
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST}:${DB_PORT}/${DB_NAME}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+```
+
+## API Endpoints
+
+### Person Management
+
+<ResponseField name="GET /v1/persons" type="protected">
+  List persons with advanced search
+  
+  **Required Permission**: `person:read`
+  
+  **Query Parameters**:
+  - `documentNumber`: Filter by document
+  - `firstName`, `lastName`: Search by name
+  - `email`, `phone`: Contact search
+  - `page`, `size`, `sort`: Pagination
+</ResponseField>
+
+<ResponseField name="GET /v1/persons/{id}" type="protected">
+  Get person by ID including addresses
+  
+  **Required Permission**: `person:read`
+</ResponseField>
+
+<ResponseField name="GET /v1/persons/count" type="protected">
+  Count total persons
+  
+  **Required Permission**: `person:read`
+</ResponseField>
+
+<ResponseField name="POST /v1/persons" type="protected">
+  Create new person
+  
+  **Required Permission**: `person:create`
+  
+  **Validations**:
+  - Unique document number
+  - Valid email format
+  - Date of birth in the past
+</ResponseField>
+
+<ResponseField name="PUT /v1/persons/{id}" type="protected">
+  Update person information
+  
+  **Required Permission**: `person:update`
+</ResponseField>
+
+<ResponseField name="DELETE /v1/persons/{id}" type="protected">
+  Delete person (soft delete)
+  
+  **Required Permission**: `person:delete`
+</ResponseField>
+
+### Company Management
+
+<ResponseField name="GET /v1/companies" type="protected">
+  List companies with filtering
+  
+  **Required Permission**: `company:read`
+  
+  **Query Parameters**:
+  - `taxId`: Filter by tax ID
+  - `legalName`: Search by name
+  - `industrySector`: Filter by industry
+  - `email`, `phone`: Contact search
+  - `page`, `size`, `sort`: Pagination
+</ResponseField>
+
+<ResponseField name="GET /v1/companies/{id}" type="protected">
+  Get company by ID including addresses
+  
+  **Required Permission**: `company:read`
+</ResponseField>
+
+<ResponseField name="GET /v1/companies/count" type="protected">
+  Count total companies
+  
+  **Required Permission**: `company:read`
+</ResponseField>
+
+<ResponseField name="POST /v1/companies" type="protected">
+  Create new company
+  
+  **Required Permission**: `company:create`
+  
+  **Validations**:
+  - Unique tax ID
+  - Valid email format
+  - Required legal name
+</ResponseField>
+
+<ResponseField name="PUT /v1/companies/{id}" type="protected">
+  Update company information
+  
+  **Required Permission**: `company:update`
+</ResponseField>
+
+<ResponseField name="DELETE /v1/companies/{id}" type="protected">
+  Delete company (soft delete)
+  
+  **Required Permission**: `company:delete`
+</ResponseField>
+
+### Address Management
+
+<ResponseField name="POST /v1/clients/{clientId}/addresses" type="protected">
+  Add address to client
+  
+  **Required Permission**: `person:update` or `company:update`
+</ResponseField>
+
+<ResponseField name="PUT /v1/clients/{clientId}/addresses/{addressId}" type="protected">
+  Update client address
+  
+  **Required Permission**: `person:update` or `company:update`
+</ResponseField>
+
+<ResponseField name="DELETE /v1/clients/{clientId}/addresses/{addressId}" type="protected">
+  Delete client address
+  
+  **Required Permission**: `person:delete` or `company:delete`
+</ResponseField>
+
+## Request/Response Examples
+
+### Create Person
+
+```json
+POST /v1/persons
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "firstName": "John",
+  "lastName": "Doe",
+  "documentNumber": "12345678",
+  "dateOfBirth": "1990-05-15",
+  "email": "john.doe@example.com",
+  "phone": "+1-555-0123",
+  "addresses": [
+    {
+      "street": "123 Main St",
+      "city": "New York",
+      "state": "NY",
+      "country": "USA",
+      "postalCode": "10001",
+      "addressType": "HOME"
+    }
+  ]
+}
+```
+
+### Response
+
+```json
+{
+  "id": 123,
+  "clientType": "PERSON",
+  "firstName": "John",
+  "lastName": "Doe",
+  "documentNumber": "12345678",
+  "dateOfBirth": "1990-05-15",
+  "email": "john.doe@example.com",
+  "phone": "+1-555-0123",
+  "addresses": [
+    {
+      "id": 456,
+      "street": "123 Main St",
+      "city": "New York",
+      "state": "NY",
+      "country": "USA",
+      "postalCode": "10001",
+      "addressType": "HOME"
+    }
+  ],
+  "createdAt": "2024-03-06T10:30:00Z",
+  "updatedAt": "2024-03-06T10:30:00Z"
+}
+```
+
+### Create Company
+
+```json
+POST /v1/companies
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "legalName": "Acme Corporation",
+  "taxId": "12-3456789",
+  "industrySector": "TECHNOLOGY",
+  "email": "contact@acme.com",
+  "phone": "+1-555-9999",
+  "addresses": [
+    {
+      "street": "456 Business Ave",
+      "city": "San Francisco",
+      "state": "CA",
+      "country": "USA",
+      "postalCode": "94102",
+      "addressType": "WORK"
+    }
+  ]
+}
+```
+
+## Observability
+
+### Actuator Endpoints
+
+- `/actuator/health`: Service health with database connectivity
+- `/actuator/info`: Application metadata and version
+
+**Health Response**:
+```json
+{
+  "status": "UP",
+  "components": {
+    "db": {"status": "UP"},
+    "diskSpace": {"status": "UP"},
+    "ping": {"status": "UP"}
+  }
+}
+```
+
+### Distributed Tracing
+
+**Zipkin Integration**:
+- Endpoint: `http://sgivu-zipkin:9411`
+- Automatic trace correlation
+- Span creation for database operations
+
+### API Documentation
+
+Access via gateway: `http://gateway:8080/docs/client/swagger-ui/index.html`
+
+## Testing
+
+```bash
+./mvnw test
+```
+
+**Test Coverage**:
+- Unit tests for services and mappers
+- Repository integration tests with test containers
+- Controller tests with MockMvc
+- Security authorization tests
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="401/403 Authorization errors">
+    **Symptoms**: API requests return unauthorized or forbidden
+    
+    **Solutions**:
+    - Verify Bearer token is present in Authorization header
+    - Check token contains required authorities
+    - Ensure token issuer is `sgivu-auth`
+    - Validate token hasn't expired
+    - Review user role assignments in User Service
+  </Accordion>
+  
+  <Accordion title="Database connection errors">
+    **Symptoms**: Service fails to start or database operations fail
+    
+    **Solutions**:
+    - Verify `DEV_CLIENT_DB_*` or `PROD_CLIENT_DB_*` environment variables
+    - Check PostgreSQL is running and accessible
+    - Ensure database and user exist
+    - Review Flyway migration status
+    - Check database credentials
+  </Accordion>
+  
+  <Accordion title="Flyway migration failures">
+    **Symptoms**: Service fails to start with Flyway error
+    
+    **Solutions**:
+    - Check migration script syntax
+    - Verify database user has CREATE/ALTER permissions
+    - Review `flyway_schema_history` table
+    - Clear failed migrations if in development
+    - Ensure migrations are sequential (V1, V2, etc.)
+  </Accordion>
+  
+  <Accordion title="Duplicate document/tax ID error">
+    **Symptoms**: Creation fails with unique constraint violation
+    
+    **Solutions**:
+    - Check if client already exists before creation
+    - Handle duplicate key exceptions gracefully
+    - Return clear error message to user
+    - Consider soft delete for deactivated clients
+    - Allow searching by document before creation
+  </Accordion>
+  
+  <Accordion title="Service not appearing in Eureka">
+    **Symptoms**: Client service not visible in discovery dashboard
+    
+    **Solutions**:
+    - Verify `eureka.client.service-url.defaultZone` configuration
+    - Check network connectivity to `sgivu-discovery`
+    - Ensure `spring.application.name` is set correctly
+    - Review Eureka registration logs
+    - Wait 30-60 seconds for registration to complete
+  </Accordion>
+</AccordionGroup>
+
+## Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|----------|
+| `PORT` | Server port | `8082` |
+| `DB_HOST` | PostgreSQL host | `sgivu-postgres-client` |
+| `DB_PORT` | PostgreSQL port | `5432` |
+| `DB_NAME` | Database name | `sgivu_client` |
+| `DB_USERNAME` | Database username | `sgivu_user` |
+| `DB_PASSWORD` | Database password | `secure_password` |
+| `DEV_CLIENT_DB_*` | Dev database variables | Prefixed with `DEV_CLIENT_DB_` |
+| `PROD_CLIENT_DB_*` | Prod database variables | Prefixed with `PROD_CLIENT_DB_` |
+| `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI` | Auth server issuer | `http://sgivu-auth:9000` |
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Validation" icon="shield-check">
+    Validate unique identifiers (document, tax ID) before creation
+  </Card>
+  <Card title="Soft Delete" icon="trash-arrow-up">
+    Use soft deletes to maintain referential integrity
+  </Card>
+  <Card title="Search Optimization" icon="magnifying-glass">
+    Index frequently searched fields for performance
+  </Card>
+  <Card title="Audit Trail" icon="clock-rotate-left">
+    Track creation and update timestamps for all entities
+  </Card>
+</CardGroup>
+
+## Related Services
+
+<CardGroup cols={2}>
+  <Card title="Purchase-Sale" icon="file-contract" href="/services/purchase-sale">
+    References clients as buyers and sellers
+  </Card>
+  <Card title="User Service" icon="users" href="/services/user">
+    Similar entity management patterns
+  </Card>
+  <Card title="Gateway" icon="shield" href="/services/gateway">
+    Routes client management requests
+  </Card>
+  <Card title="Auth Server" icon="lock" href="/services/auth">
+    Issues tokens for authorization
+  </Card>
+</CardGroup>

@@ -1,0 +1,106 @@
+---
+title: Authentication
+description: Secure login and access management for SGIVU platform
+---
+
+## Overview
+
+SGIVU uses a secure OAuth2 and OpenID Connect authentication system to protect your account and data. All users must authenticate before accessing the platform's features.
+
+## Logging In
+
+<Steps>
+  <Step title="Navigate to Login">
+    Access the SGIVU platform through your web browser. You'll be automatically redirected to the login page if you're not authenticated.
+  </Step>
+  
+  <Step title="Enter Credentials">
+    Enter your username and password in the login form. Make sure your credentials are correct and match what was provided during account setup.
+  </Step>
+  
+  <Step title="Submit">
+    Click the login button to authenticate. The system will verify your credentials and issue a secure access token.
+  </Step>
+  
+  <Step title="Access Platform">
+    Once authenticated, you'll be redirected to the SGIVU dashboard where you can access all features based on your permissions.
+  </Step>
+</Steps>
+
+## Session Management
+
+<Card title="Automatic Session Handling" icon="clock">
+  Your session is automatically managed by SGIVU. Sessions remain active while you're using the platform and expire after a period of inactivity for security purposes.
+</Card>
+
+<Card title="Secure Token Storage" icon="lock">
+  Access tokens are securely stored and automatically included with your requests. You don't need to manually manage authentication tokens.
+</Card>
+
+## Security Features
+
+### Multi-Client Support
+
+SGIVU supports different types of clients for various use cases:
+
+- **Web Application**: The main SGIVU web interface
+- **API Access**: Programmatic access for integrations
+- **Testing Tools**: Development and debugging clients for authorized users
+
+### Token-Based Authentication
+
+All authenticated requests use JSON Web Tokens (JWT) that contain:
+
+- Your user identity
+- Assigned roles and permissions
+- Token expiration time
+- Secure digital signature
+
+### OpenID Connect Discovery
+
+The authentication system provides industry-standard OpenID Connect endpoints:
+
+- **Authorization**: Handles login flow and user consent
+- **Token Issuance**: Issues secure access and refresh tokens
+- **Key Distribution**: Publishes public keys for token verification
+- **User Info**: Provides authenticated user profile data
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="I forgot my password">
+    Contact your system administrator to reset your password. Password reset functionality must be initiated by an administrator with appropriate permissions.
+  </Accordion>
+  
+  <Accordion title="I'm getting 'Unauthorized' errors">
+    This usually means your session has expired. Log out completely and log back in to obtain a fresh authentication token.
+  </Accordion>
+  
+  <Accordion title="Login page won't load">
+    Ensure you're using the correct SGIVU URL provided by your administrator. Check your internet connection and browser settings.
+  </Accordion>
+  
+  <Accordion title="Authentication fails immediately after login">
+    This may indicate a configuration issue with the authentication server. Contact your system administrator if the problem persists.
+  </Accordion>
+</AccordionGroup>
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Strong Passwords" icon="shield-halved">
+    Use complex passwords with a mix of uppercase, lowercase, numbers, and special characters.
+  </Card>
+  
+  <Card title="Log Out When Done" icon="right-from-bracket">
+    Always log out when you're finished, especially on shared computers.
+  </Card>
+  
+  <Card title="Protect Credentials" icon="user-lock">
+    Never share your username and password with anyone, including colleagues.
+  </Card>
+  
+  <Card title="Report Suspicious Activity" icon="triangle-exclamation">
+    Contact your administrator immediately if you notice any unauthorized access to your account.
+  </Card>
+</CardGroup>

@@ -1,0 +1,438 @@
+---
+title: User Service
+description: User, role, and permission management service
+---
+
+## Overview
+
+`sgivu-user` manages users, roles, and permissions in the SGIVU ecosystem. It provides CRUD operations for users and persons, role and permission management, multi-criteria search, and support endpoints for the Authorization Server (username lookup for JWT issuance).
+
+## Technologies
+
+- **Java**: 21
+- **Spring Boot**: 4.0.1
+- **Spring Security**: Resource Server (JWT validation)
+- **Spring Data JPA**: PostgreSQL persistence
+- **Flyway**: Database migrations
+- **Spring Cloud Config Client**: Centralized configuration
+- **Spring Cloud Eureka Client**: Service registration
+- **SpringDoc OpenAPI**: Swagger UI documentation
+- **MapStruct**: DTO mapping
+- **Lombok**: Code generation
+
+## Prerequisites
+
+- JDK 21
+- Maven 3.9+
+- PostgreSQL database
+- `sgivu-config` and `sgivu-discovery` services running
+
+## Running the Service
+
+### Development with Docker Compose
+
+```bash
+cd infra/compose/sgivu-docker-compose
+docker compose -f docker-compose.dev.yml up -d
+```
+
+### Local Execution
+
+```bash
+./mvnw clean install -DskipTests
+./mvnw spring-boot:run
+```
+
+### Docker Build
+
+```bash
+./build-image.bash
+docker build -t sgivu-user:local .
+```
+
+## Security
+
+### Authentication
+
+**JWT Token Validation**:
+- Tokens issued by `sgivu-auth` Authorization Server
+- Validation using `NimbusJwtDecoder` pointing to issuer
+- Resource Server configuration validates signature via JWKS endpoint
+
+### Authorization
+
+**Claims-Based Authorization**:
+- `rolesAndPermissions` claim used for granular authorization
+- Required permissions per endpoint:
+  - `user:create` - Create users
+  - `user:read` - View users
+  - `user:update` - Update users
+  - `user:delete` - Delete users
+  - `person:create`, `person:read`, `person:update`, `person:delete` - Person operations
+
+### Internal Service Authentication
+
+**X-Internal-Service-Key Header**:
+- Allows `sgivu-auth` to query users by username during token issuance
+- Used for service-to-service authentication
+- **Critical**: Do not expose this key externally
+
+<Warning>
+The `X-Internal-Service-Key` header bypasses normal authentication. Ensure this key is:
+- Stored securely (environment variable or secret manager)
+- Only known to authorized services
+- Rotated regularly
+- Never logged or exposed in error messages
+</Warning>
+
+### Custom Validators
+
+**PasswordStrength Validator**:
+- Minimum length requirements
+- Complexity rules (uppercase, lowercase, numbers, special characters)
+- Applied on user creation and password updates
+
+**NoSpecialCharacters Validator**:
+- Prevents special characters in specific fields
+- Applied to usernames and other text fields
+- Configurable character whitelist
+
+## Database Schema
+
+### Flyway Migrations
+
+**Location**: `src/main/resources/db/migration`
+
+**V1__initial_schema.sql** creates:
+
+<Tabs>
+  <Tab title="Core Tables">
+    - `permissions`: System permissions catalog
+    - `roles`: User roles
+    - `persons`: Personal information
+    - `users`: User accounts
+  </Tab>
+  <Tab title="Junction Tables">
+    - `roles_permissions`: Many-to-many role-permission mapping
+    - `users_roles`: Many-to-many user-role mapping
+  </Tab>
+  <Tab title="Related Tables">
+    - `addresses`: Physical addresses for persons
+  </Tab>
+</Tabs>
+
+**Indexes**:
+- `users.username` (unique)
+- `persons.document_number` (unique)
+- `permissions.name` (unique)
+- `roles.name` (unique)
+
+### Seed Data
+
+**Location**: `src/main/resources/db/seed/R__seed_data.sql`
+
+**Creates**:
+- Admin user: `steven` with `ADMIN` role
+- Complete permissions catalog
+- Default roles (ADMIN, USER, etc.)
+- Sample person and address data
+
+<Info>
+Repeatable migration (`R__`) runs on every startup if checksum changes. Use for reference data that may need updates.
+</Info>
+
+## API Endpoints
+
+### User Management
+
+<ResponseField name="GET /v1/users" type="protected">
+  List all users with pagination
+  
+  **Required Permission**: `user:read`
+  
+  **Query Parameters**:
+  - `page`: Page number (default: 0)
+  - `size`: Page size (default: 20)
+  - `sort`: Sort field and direction
+</ResponseField>
+
+<ResponseField name="GET /v1/users/{id}" type="protected">
+  Get user by ID
+  
+  **Required Permission**: `user:read`
+</ResponseField>
+
+<ResponseField name="POST /v1/users" type="protected">
+  Create new user
+  
+  **Required Permission**: `user:create`
+  
+  **Validations**:
+  - Unique username
+  - Password strength requirements
+  - Valid role assignments
+</ResponseField>
+
+<ResponseField name="PUT /v1/users/{id}" type="protected">
+  Update existing user
+  
+  **Required Permission**: `user:update`
+</ResponseField>
+
+<ResponseField name="DELETE /v1/users/{id}" type="protected">
+  Delete user (soft delete)
+  
+  **Required Permission**: `user:delete`
+</ResponseField>
+
+### Person Management
+
+<ResponseField name="GET /v1/persons" type="protected">
+  List persons with advanced search
+  
+  **Required Permission**: `person:read`
+  
+  **Supports**:
+  - Multi-criteria filtering
+  - Sorting and pagination
+  - Search by document number, name, etc.
+</ResponseField>
+
+<ResponseField name="GET /v1/persons/{id}" type="protected">
+  Get person by ID including addresses
+  
+  **Required Permission**: `person:read`
+</ResponseField>
+
+<ResponseField name="POST /v1/persons" type="protected">
+  Create person with optional addresses
+  
+  **Required Permission**: `person:create`
+</ResponseField>
+
+<ResponseField name="PUT /v1/persons/{id}" type="protected">
+  Update person information
+  
+  **Required Permission**: `person:update`
+</ResponseField>
+
+<ResponseField name="DELETE /v1/persons/{id}" type="protected">
+  Delete person
+  
+  **Required Permission**: `person:delete`
+</ResponseField>
+
+### Internal Endpoints
+
+<ResponseField name="GET /internal/users/by-username/{username}" type="internal">
+  Query user by username for token issuance
+  
+  **Authentication**: Requires `X-Internal-Service-Key` header
+  
+  **Used By**: `sgivu-auth` during login flow
+  
+  **Returns**: User details with roles and permissions
+</ResponseField>
+
+<Warning>
+Internal endpoints should not be exposed through the API Gateway. Configure gateway to block `/internal/*` paths.
+</Warning>
+
+## Request/Response Examples
+
+### Create User
+
+```json
+POST /v1/users
+Authorization: Bearer <jwt-token>
+Content-Type: application/json
+
+{
+  "username": "jdoe",
+  "password": "SecureP@ssw0rd!",
+  "email": "jdoe@example.com",
+  "personId": 123,
+  "roleIds": [1, 2],
+  "enabled": true
+}
+```
+
+### Response
+
+```json
+{
+  "id": 456,
+  "username": "jdoe",
+  "email": "jdoe@example.com",
+  "enabled": true,
+  "person": {
+    "id": 123,
+    "firstName": "John",
+    "lastName": "Doe",
+    "documentNumber": "12345678"
+  },
+  "roles": [
+    {
+      "id": 1,
+      "name": "USER",
+      "permissions": ["user:read", "person:read"]
+    },
+    {
+      "id": 2,
+      "name": "MANAGER",
+      "permissions": ["vehicle:create", "vehicle:update"]
+    }
+  ],
+  "createdAt": "2024-03-06T10:30:00Z",
+  "updatedAt": "2024-03-06T10:30:00Z"
+}
+```
+
+## Observability
+
+### Actuator Endpoints
+
+- `/actuator/health`: Service health status
+- `/actuator/info`: Application metadata
+- Additional endpoints configurable per environment
+
+### OpenAPI Documentation
+
+**Swagger UI**: `/swagger-ui/index.html`
+
+**Configuration**: `OpenApiConfig` defines server URLs for different environments
+
+```java
+@Configuration
+public class OpenApiConfig {
+    @Bean
+    public OpenAPI customOpenAPI() {
+        return new OpenAPI()
+            .info(new Info()
+                .title("SGIVU User Service API")
+                .version("1.0"))
+            .addServersItem(new Server()
+                .url("http://localhost:8080")
+                .description("API Gateway"));
+    }
+}
+```
+
+### Distributed Tracing
+
+Configured via `sgivu-config`:
+- Zipkin endpoint for trace export
+- Trace IDs propagated via headers
+- Integration with Micrometer
+
+## Testing
+
+```bash
+./mvnw test
+```
+
+**Test Coverage**:
+- Unit tests for services and validators
+- Integration tests for repositories
+- Controller tests with MockMvc
+- Security tests for permission checks
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="401/403 Authorization errors">
+    **Symptoms**: API requests return unauthorized or forbidden
+    
+    **Solutions**:
+    - Verify Bearer token is present and valid
+    - Check token contains required authorities in `rolesAndPermissions` claim
+    - Ensure token issuer matches configured Authorization Server
+    - Verify user has assigned roles with necessary permissions
+    - Check token hasn't expired
+  </Accordion>
+  
+  <Accordion title="Internal endpoint fails">
+    **Symptoms**: Auth service can't query users during login
+    
+    **Solutions**:
+    - Verify `X-Internal-Service-Key` header is present
+    - Check internal key matches between auth and user services
+    - Ensure internal endpoints aren't blocked by gateway
+    - Review network connectivity between services
+    - Check Eureka service discovery is working
+  </Accordion>
+  
+  <Accordion title="Database migration errors">
+    **Symptoms**: Service fails to start with Flyway errors
+    
+    **Solutions**:
+    - Verify PostgreSQL connection parameters
+    - Check database exists and user has proper permissions
+    - Review Flyway migration history table
+    - Ensure migration scripts have correct syntax
+    - Check for conflicts in seed data (duplicate keys)
+  </Accordion>
+  
+  <Accordion title="Password validation fails">
+    **Symptoms**: User creation rejected with password errors
+    
+    **Solutions**:
+    - Review password strength requirements
+    - Ensure password meets minimum length
+    - Include required character types (uppercase, lowercase, numbers, special)
+    - Check custom validator configuration
+  </Accordion>
+  
+  <Accordion title="Duplicate username/document">
+    **Symptoms**: Constraint violation errors on creation
+    
+    **Solutions**:
+    - Check uniqueness before creation
+    - Handle duplicate key exceptions gracefully
+    - Return clear error messages to clients
+    - Consider soft delete for deactivated users
+  </Accordion>
+</AccordionGroup>
+
+## Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|----------|
+| `DB_HOST` | PostgreSQL host | `sgivu-postgres-user` |
+| `DB_PORT` | PostgreSQL port | `5432` |
+| `DB_NAME` | Database name | `sgivu_user` |
+| `DB_USERNAME` | Database username | `sgivu_user` |
+| `DB_PASSWORD` | Database password | `secure_password` |
+| `SERVICE_INTERNAL_SECRET_KEY` | Internal service key | `secret-key-value` |
+| `SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER_URI` | Auth server issuer | `http://sgivu-auth:9000` |
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Permission Model" icon="shield-check">
+    Use fine-grained permissions for flexible access control
+  </Card>
+  <Card title="Password Policy" icon="lock">
+    Enforce strong password requirements with custom validators
+  </Card>
+  <Card title="Audit Trail" icon="clock">
+    Track createdAt/updatedAt for all entities
+  </Card>
+  <Card title="Soft Delete" icon="trash-can">
+    Consider soft deletes to maintain data integrity
+  </Card>
+</CardGroup>
+
+## Related Services
+
+<CardGroup cols={2}>
+  <Card title="Auth Server" icon="lock" href="/services/auth">
+    Queries user service for credential validation
+  </Card>
+  <Card title="Gateway" icon="shield" href="/services/gateway">
+    Routes user management API requests
+  </Card>
+  <Card title="Client Service" icon="address-book" href="/services/client">
+    Similar entity management patterns
+  </Card>
+</CardGroup>
